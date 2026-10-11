@@ -1,0 +1,251 @@
+{
+  "groups": [
+    {
+      "name": "app",
+      "type": "com.smartstart.portal.config.AppProperties",
+      "sourceType": "com.smartstart.portal.config.AppProperties"
+    },
+    {
+      "name": "app.admin",
+      "type": "com.smartstart.portal.config.AppProperties$Admin",
+      "sourceType": "com.smartstart.portal.config.AppProperties",
+      "sourceMethod": "admin()"
+    },
+    {
+      "name": "app.chat",
+      "type": "com.smartstart.portal.config.AppProperties$Chat",
+      "sourceType": "com.smartstart.portal.config.AppProperties",
+      "sourceMethod": "chat()"
+    },
+    {
+      "name": "app.cors",
+      "type": "com.smartstart.portal.config.AppProperties$Cors",
+      "sourceType": "com.smartstart.portal.config.AppProperties",
+      "sourceMethod": "cors()"
+    },
+    {
+      "name": "app.google",
+      "type": "com.smartstart.portal.config.AppProperties$Google",
+      "sourceType": "com.smartstart.portal.config.AppProperties",
+      "sourceMethod": "google()"
+    },
+    {
+      "name": "app.jobs",
+      "type": "com.smartstart.portal.config.AppProperties$Jobs",
+      "sourceType": "com.smartstart.portal.config.AppProperties",
+      "sourceMethod": "jobs()"
+    },
+    {
+      "name": "app.jobs.class-reminder",
+      "type": "com.smartstart.portal.config.AppProperties$Job",
+      "sourceType": "com.smartstart.portal.config.AppProperties$Jobs",
+      "sourceMethod": "classReminder()"
+    },
+    {
+      "name": "app.jobs.dispatch",
+      "type": "com.smartstart.portal.config.AppProperties$Job",
+      "sourceType": "com.smartstart.portal.config.AppProperties$Jobs",
+      "sourceMethod": "dispatch()"
+    },
+    {
+      "name": "app.jobs.fee-reminder",
+      "type": "com.smartstart.portal.config.AppProperties$Job",
+      "sourceType": "com.smartstart.portal.config.AppProperties$Jobs",
+      "sourceMethod": "feeReminder()"
+    },
+    {
+      "name": "app.jwt",
+      "type": "com.smartstart.portal.config.AppProperties$Jwt",
+      "sourceType": "com.smartstart.portal.config.AppProperties",
+      "sourceMethod": "jwt()"
+    },
+    {
+      "name": "app.login",
+      "type": "com.smartstart.portal.config.AppProperties$Login",
+      "sourceType": "com.smartstart.portal.config.AppProperties",
+      "sourceMethod": "login()"
+    },
+    {
+      "name": "app.mail",
+      "type": "com.smartstart.portal.config.AppProperties$Mail",
+      "sourceType": "com.smartstart.portal.config.AppProperties",
+      "sourceMethod": "mail()"
+    },
+    {
+      "name": "app.sms",
+      "type": "com.smartstart.portal.config.AppProperties$Sms",
+      "sourceType": "com.smartstart.portal.config.AppProperties",
+      "sourceMethod": "sms()"
+    }
+  ],
+  "properties": [
+    {
+      "name": "app.admin.full-name",
+      "type": "java.lang.String",
+      "sourceType": "com.smartstart.portal.config.AppProperties$Admin"
+    },
+    {
+      "name": "app.admin.password",
+      "type": "java.lang.String",
+      "sourceType": "com.smartstart.portal.config.AppProperties$Admin"
+    },
+    {
+      "name": "app.admin.username",
+      "type": "java.lang.String",
+      "sourceType": "com.smartstart.portal.config.AppProperties$Admin"
+    },
+    {
+      "name": "app.chat.enabled",
+      "type": "java.lang.Boolean",
+      "sourceType": "com.smartstart.portal.config.AppProperties$Chat",
+      "defaultValue": false
+    },
+    {
+      "name": "app.chat.max-rounds",
+      "type": "java.lang.Integer",
+      "sourceType": "com.smartstart.portal.config.AppProperties$Chat",
+      "defaultValue": 0
+    },
+    {
+      "name": "app.chat.model",
+      "type": "java.lang.String",
+      "sourceType": "com.smartstart.portal.config.AppProperties$Chat"
+    },
+    {
+      "name": "app.chat.ollama-url",
+      "type": "java.lang.String",
+      "sourceType": "com.smartstart.portal.config.AppProperties$Chat"
+    },
+    {
+      "name": "app.chat.timeout",
+      "type": "java.time.Duration",
+      "sourceType": "com.smartstart.portal.config.AppProperties$Chat"
+    },
+    {
+      "name": "app.cors.allowed-origins",
+      "type": "java.util.List<java.lang.String>",
+      "sourceType": "com.smartstart.portal.config.AppProperties$Cors"
+    },
+    {
+      "name": "app.google.application-name",
+      "type": "java.lang.String",
+      "sourceType": "com.smartstart.portal.config.AppProperties$Google"
+    },
+    {
+      "name": "app.google.credentials-path",
+      "type": "java.lang.String",
+      "sourceType": "com.smartstart.portal.config.AppProperties$Google"
+    },
+    {
+      "name": "app.google.enabled",
+      "type": "java.lang.Boolean",
+      "sourceType": "com.smartstart.portal.config.AppProperties$Google",
+      "defaultValue": false
+    },
+    {
+      "name": "app.google.send-invites",
+      "type": "java.lang.Boolean",
+      "sourceType": "com.smartstart.portal.config.AppProperties$Google",
+      "defaultValue": false
+    },
+    {
+      "name": "app.jobs.class-reminder.cron",
+      "type": "java.lang.String",
+      "sourceType": "com.smartstart.portal.config.AppProperties$Job"
+    },
+    {
+      "name": "app.jobs.class-reminder.enabled",
+      "type": "java.lang.Boolean",
+      "sourceType": "com.smartstart.portal.config.AppProperties$Job",
+      "defaultValue": false
+    },
+    {
+      "name": "app.jobs.dispatch.cron",
+      "type": "java.lang.String",
+      "sourceType": "com.smartstart.portal.config.AppProperties$Job"
+    },
+    {
+      "name": "app.jobs.dispatch.enabled",
+      "type": "java.lang.Boolean",
+      "sourceType": "com.smartstart.portal.config.AppProperties$Job",
+      "defaultValue": false
+    },
+    {
+      "name": "app.jobs.fee-reminder.cron",
+      "type": "java.lang.String",
+      "sourceType": "com.smartstart.portal.config.AppProperties$Job"
+    },
+    {
+      "name": "app.jobs.fee-reminder.enabled",
+      "type": "java.lang.Boolean",
+      "sourceType": "com.smartstart.portal.config.AppProperties$Job",
+      "defaultValue": false
+    },
+    {
+      "name": "app.jwt.expiration",
+      "type": "java.time.Duration",
+      "sourceType": "com.smartstart.portal.config.AppProperties$Jwt"
+    },
+    {
+      "name": "app.jwt.secret",
+      "type": "java.lang.String",
+      "sourceType": "com.smartstart.portal.config.AppProperties$Jwt"
+    },
+    {
+      "name": "app.login.lockout",
+      "type": "java.time.Duration",
+      "sourceType": "com.smartstart.portal.config.AppProperties$Login"
+    },
+    {
+      "name": "app.login.max-failures",
+      "type": "java.lang.Integer",
+      "sourceType": "com.smartstart.portal.config.AppProperties$Login",
+      "defaultValue": 0
+    },
+    {
+      "name": "app.mail.from",
+      "type": "java.lang.String",
+      "sourceType": "com.smartstart.portal.config.AppProperties$Mail"
+    },
+    {
+      "name": "app.mail.from-name",
+      "type": "java.lang.String",
+      "sourceType": "com.smartstart.portal.config.AppProperties$Mail"
+    },
+    {
+      "name": "app.sms.default-country-code",
+      "type": "java.lang.String",
+      "sourceType": "com.smartstart.portal.config.AppProperties$Sms"
+    },
+    {
+      "name": "app.sms.enabled",
+      "type": "java.lang.Boolean",
+      "sourceType": "com.smartstart.portal.config.AppProperties$Sms",
+      "defaultValue": false
+    },
+    {
+      "name": "app.sms.gateway-url",
+      "type": "java.lang.String",
+      "sourceType": "com.smartstart.portal.config.AppProperties$Sms"
+    },
+    {
+      "name": "app.sms.password",
+      "type": "java.lang.String",
+      "sourceType": "com.smartstart.portal.config.AppProperties$Sms"
+    },
+    {
+      "name": "app.sms.timeout",
+      "type": "java.time.Duration",
+      "sourceType": "com.smartstart.portal.config.AppProperties$Sms"
+    },
+    {
+      "name": "app.sms.username",
+      "type": "java.lang.String",
+      "sourceType": "com.smartstart.portal.config.AppProperties$Sms"
+    }
+  ],
+  "hints": [],
+  "ignored": {
+    "properties": []
+  }
+}

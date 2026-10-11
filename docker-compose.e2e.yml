@@ -1,0 +1,42 @@
+# Overlay for the Playwright suite: routes all backend mail to MailHog, all SMS to a local sink and the "Ask"
+# assistant to a scripted fake Ollama, whatever .env says, so tests never send real email or texts, run
+# deterministically, and can assert on what was "sent".
+#   docker compose -f docker-compose.yml -f docker-compose.e2e.yml up -d backend
+# Switch back afterwards with: docker compose up -d backend
+services:
+  sms-sink:
+    image: node:22-alpine
+    command: ["node", "/app/server.mjs"]
+    volumes:
+      - ./e2e/sms-sink:/app:ro
+    ports:
+      - "8090:8080"   # GET http://localhost:8090/messages
+
+  fake-ollama:
+    image: node:22-alpine
+    command: ["node", "/app/server.mjs"]
+    volumes:
+      - ./e2e/fake-ollama:/app:ro
+
+  backend:
+    environment:
+      SMTP_HOST: mailhog
+      SMTP_PORT: 1025
+      SMTP_USERNAME: ""
+      SMTP_PASSWORD: ""
+      SMTP_AUTH: "false"
+      SMTP_STARTTLS: "false"
+      MAIL_FROM: no-reply@smartstart.example.com
+      SMS_ENABLED: "true"
+      SMS_GATEWAY_URL: http://sms-sink:8080/message
+      SMS_GATEWAY_USERNAME: e2e
+      SMS_GATEWAY_PASSWORD: e2e-secret
+      SMS_DEFAULT_COUNTRY_CODE: "1"
+      CHAT_ENABLED: "true"
+      CHAT_MODEL: qwen3.5:latest
+      OLLAMA_URL: http://fake-ollama:11434
+    depends_on:
+      sms-sink:
+        condition: service_started
+      fake-ollama:
+        condition: service_started
