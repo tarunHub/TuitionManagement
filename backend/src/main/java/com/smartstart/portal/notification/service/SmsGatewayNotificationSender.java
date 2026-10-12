@@ -64,7 +64,7 @@ public class SmsGatewayNotificationSender implements NotificationSender {
         }
         try {
             client.post()
-                    .uri(props.gatewayUrl())
+                    .uri(endpoint(props.gatewayUrl()))
                     .contentType(MediaType.APPLICATION_JSON)
                     .headers(h -> {
                         if (props.username() != null && !props.username().isBlank()) {
@@ -84,5 +84,21 @@ public class SmsGatewayNotificationSender implements NotificationSender {
             String reason = e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage();
             throw new NotificationDeliveryException("SMS gateway unreachable (is the phone on and the app's server running?): " + reason, e);
         }
+    }
+
+    /**
+     * Accepts what the app screen shows, e.g. "10.0.0.12:8080": adds http:// when no scheme is given and the
+     * local server's /message path when no path is given. Full URLs (including the cloud relay) are used as-is.
+     */
+    static String endpoint(String configured) {
+        String url = configured.strip();
+        if (!url.contains("://")) {
+            url = "http://" + url;
+        }
+        int pathStart = url.indexOf('/', url.indexOf("://") + 3);
+        if (pathStart < 0 || pathStart == url.length() - 1) {
+            url = (pathStart < 0 ? url : url.substring(0, pathStart)) + "/message";
+        }
+        return url;
     }
 }

@@ -1,9 +1,11 @@
 package com.smartstart.portal.schedule.service;
 
+import com.smartstart.portal.calendar.entity.ClassSession;
+import com.smartstart.portal.calendar.repository.ClassSessionRepository;
+import com.smartstart.portal.schedule.entity.ScheduleDay;
 import com.smartstart.portal.schedule.dto.ScheduleDtos.ClassOccurrence;
 import com.smartstart.portal.schedule.entity.ScheduleSlot;
 import com.smartstart.portal.schedule.entity.Term;
-import com.smartstart.portal.schedule.repository.ScheduleSlotRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -17,37 +19,35 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-/** Expands weekly slots into dated occurrences, bounded by each slot's term (rule 9). */
+/**
+ * Class dates for fees ("classes scheduled") and the dashboard's upcoming classes. These come from the monthly
+ * Class Calendar; the static helpers still expand weekly slots for the legacy Google Calendar sync.
+ */
 @Service
 @RequiredArgsConstructor
 public class ScheduleCalendar {
 
-    private final ScheduleSlotRepository slotRepository;
+    private final ClassSessionRepository sessionRepository;
 
-    /** Number of scheduled class occurrences per class group in the month. Groups without slots are absent. */
+    /** Number of classes per batch on the class calendar in the month. Batches without classes are absent. */
     @Transactional(readOnly = true)
     public Map<Long, Integer> classesScheduledByGroup(YearMonth month) {
         Map<Long, Integer> out = new HashMap<>();
-        for (ScheduleSlot slot : slotRepository.findInTermsOverlapping(month.atDay(1), month.atEndOfMonth())) {
-            int n = dates(slot, month.atDay(1), month.atEndOfMonth()).size();
-            out.merge(slot.getClassGroup().getId(), n, Integer::sum);
+        for (ClassSession s : sessionRepository.findBetween(month.atDay(1), month.atEndOfMonth(), null)) {
+            out.merge(s.getClassGroup().getId(), 1, Integer::sum);
         }
         return out;
     }
 
-    /** All class occurrences between the two dates (inclusive), ordered by date and start time. */
+    /** All classes between the two dates (inclusive), ordered by date and start time. */
     @Transactional(readOnly = true)
     public List<ClassOccurrence> occurrences(LocalDate from, LocalDate to) {
-        List<ClassOccurrence> out = new ArrayList<>();
-        for (ScheduleSlot slot : slotRepository.findInTermsOverlapping(from, to)) {
-            for (LocalDate date : dates(slot, from, to)) {
-                out.add(new ClassOccurrence(slot.getId(), date, slot.getDayOfWeek(), slot.getStartTime(), slot.getEndTime(),
-                        slot.getClassGroup().getId(), slot.getClassGroup().getName(), slot.getSubject(),
-                        slot.getLocation(), slot.getTeacher()));
-            }
-        }
-        out.sort(Comparator.comparing(ClassOccurrence::date).thenComparing(ClassOccurrence::startTime));
-        return out;
+        return sessionRepository.findBetween(from, to, null).stream()
+                .map(s -> new ClassOccurrence(s.getId(), s.getClassDate(), ScheduleDay.of(s.getClassDate().getDayOfWeek()),
+                        s.getStartTime(), s.getEndTime(), s.getClassGroup().getId(), s.getClassGroup().getName(), null,
+                        s.getLocation(), null))
+                .sorted(Comparator.comparing(ClassOccurrence::date).thenComparing(ClassOccurrence::startTime))
+                .toList();
     }
 
     public static List<LocalDate> dates(ScheduleSlot slot, LocalDate from, LocalDate to) {

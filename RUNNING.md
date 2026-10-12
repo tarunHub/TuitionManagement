@@ -126,6 +126,18 @@ python3 tools/chat_eval.py        # 20 questions with known answers; update expe
 
 The E2E suite does not use Ollama: the overlay starts `e2e/fake-ollama`, a scripted stand-in.
 
+## Monthly class calendar
+
+1. Open **Class Calendar** in the sidebar and pick the month in the top bar.
+2. Use **Repeat weekly** (e.g. Batch1, Tue + Thu, 17:00–18:00) to fill the month, then click days to add, move or
+   remove single classes (holidays, extra classes).
+3. **Send schedule to parents** sends each batch's dates by email and/or SMS (needs email / SMS set up in `.env`).
+   Automatic reminders are set under **Reminder settings** on the Class Calendar (default 8 AM on the class day,
+   email + SMS). **Send reminder now** (in a class) and **Send today's reminders** send them on demand. After you
+   add, move or remove a class, the page asks whether to notify parents.
+4. On **Attendance**, those days show **S**; click to change them to **P** or **A** after the class and press **Save**.
+   Amber S = class day passed but not marked yet.
+
 ## Importing the centre's spreadsheet
 
 `tools/import_excel.py` replaces all portal data (students, groups, grade rates, attendance, fees, payments, feedback,

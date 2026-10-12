@@ -517,3 +517,27 @@ export interface RepeatWeeklyInput {
   endTime: string
   location?: string
 }
+
+export interface ReminderSettings {
+  enabled: boolean
+  /** 0 = morning of the class, 1 = day before, 2 = two days before */
+  daysBefore: number
+  sendTime: string
+  sendEmail: boolean
+  sendSms: boolean
+  lastRunDate: string | null
+  smsAvailable: boolean
+}
+
+export interface ClassChangeInput {
+  kind: 'ADDED' | 'CHANGED' | 'CANCELLED'
+  classGroupId: number
+  date: string
+  startTime: string
+  endTime: string
+  location: string | null
+  previousDate?: string
+  previousStartTime?: string
+  previousEndTime?: string
+  previousLocation?: string | null
+}

@@ -1,5 +1,6 @@
 package com.smartstart.portal.notification.service;
 
+import com.smartstart.portal.calendar.service.ReminderSettingsService;
 import com.smartstart.portal.notification.dto.NotificationDtos.BulkSendResult;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -9,7 +10,6 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.scheduling.annotation.Scheduled;
 
 import java.time.Clock;
-import java.time.LocalDate;
 import java.time.YearMonth;
 
 /**
@@ -27,8 +27,8 @@ public class NotificationJobs {
 
     @Bean
     @ConditionalOnProperty(name = "app.jobs.class-reminder.enabled", havingValue = "true")
-    public ClassReminderJob classReminderJob(NotificationService service, Clock clock) {
-        return new ClassReminderJob(service, clock);
+    public ClassReminderJob classReminderJob(NotificationService service, ReminderSettingsService settings) {
+        return new ClassReminderJob(service, settings);
     }
 
     @Bean
@@ -55,18 +55,27 @@ public class NotificationJobs {
         }
     }
 
-    /** Day-before class reminders (default 6 PM). */
+    /**
+     * Automatic class reminders. Checks once a minute against the settings on the Class Calendar page (on/off, time,
+     * day of the class or days before, email/SMS) and sends once per day.
+     */
     @Slf4j
     @RequiredArgsConstructor
     public static class ClassReminderJob {
         private final NotificationService service;
-        private final Clock clock;
+        private final ReminderSettingsService settings;
 
-        @Scheduled(cron = "${app.jobs.class-reminder.cron}", zone = "America/Toronto")
+        @Scheduled(cron = "0 * * * * *", zone = "America/Toronto")
         public void run() {
-            LocalDate tomorrow = LocalDate.now(clock).plusDays(1);
-            BulkSendResult result = service.classReminders(tomorrow);
-            log.info("Class reminders for {}: {} created, {} sent, {} failed", tomorrow, result.created(), result.sent(), result.failed());
+            settings.claimDueRun().ifPresent(due -> {
+                if (due.channels().isEmpty()) {
+                    log.info("Class reminders for {} skipped: email and SMS are both switched off", due.classDate());
+                    return;
+                }
+                BulkSendResult result = service.classReminders(due.classDate(), due.channels());
+                log.info("Class reminders for {} ({}): {} created, {} sent, {} failed", due.classDate(), due.channels(),
+                        result.created(), result.sent(), result.failed());
+            });
         }
     }
 

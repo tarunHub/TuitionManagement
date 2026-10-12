@@ -88,8 +88,8 @@ app:
       enabled: ${JOB_DISPATCH_ENABLED:true}
       cron: ${JOB_DISPATCH_CRON:0 * * * * *}
     class-reminder:
+      # Master switch only; the time, day and channels are set on the Class Calendar page (Reminder settings).
       enabled: ${JOB_CLASS_REMINDER_ENABLED:true}
-      cron: ${JOB_CLASS_REMINDER_CRON:0 0 18 * * *}
     fee-reminder:
       enabled: ${JOB_FEE_REMINDER_ENABLED:true}
       cron: ${JOB_FEE_REMINDER_CRON:0 0 9 5 * *}

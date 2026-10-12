@@ -1,5 +1,6 @@
 package com.smartstart.portal.notification.service;
 
+import com.smartstart.portal.calendar.dto.ClassCalendarDtos.ClassChangeRequest;
 import com.smartstart.portal.calendar.entity.ClassSession;
 import com.smartstart.portal.common.util.AppTime;
 import com.smartstart.portal.common.util.Money;
@@ -22,6 +23,7 @@ import java.util.Map;
 @Component
 public class NotificationContextFactory {
 
+    private static final DateTimeFormatter MONTH_DAY = DateTimeFormatter.ofPattern("MMM d", Locale.CANADA);
     private static final DateTimeFormatter SHORT_DATE = DateTimeFormatter.ofPattern("EEE, MMM d", Locale.CANADA);
     private static final DateTimeFormatter DATE = DateTimeFormatter.ofPattern("EEEE, MMMM d, yyyy", Locale.CANADA);
 
@@ -42,6 +44,7 @@ public class NotificationContextFactory {
         ctx.put("amountDue", "");
         ctx.put("balance", "");
         ctx.put("scheduleTable", "");
+        ctx.put("classDates", "");
         ctx.put("time", "");
         ctx.put("location", "");
         return ctx;
@@ -110,14 +113,18 @@ public class NotificationContextFactory {
         return table(headers, rows);
     }
 
-    /** Text list of a batch's class dates, e.g. "Tue, Oct 6  17:00–18:00  Caledon Centre". */
-    public String sessionTable(List<ClassSession> sessions) {
+    /** Text table of class dates, e.g. "Tue, Oct 6  17:00–18:00  Caledon Centre"; {@code includeGroup} adds a Batch column. */
+    public String sessionTable(List<ClassSession> sessions, boolean includeGroup) {
         if (sessions.isEmpty()) {
             return "(no classes scheduled)";
         }
         boolean location = sessions.stream().anyMatch(s -> s.getLocation() != null);
         boolean notes = sessions.stream().anyMatch(s -> s.getNotes() != null);
-        List<String> headers = new ArrayList<>(List.of("Date", "Time"));
+        List<String> headers = new ArrayList<>();
+        if (includeGroup) {
+            headers.add("Batch");
+        }
+        headers.addAll(List.of("Date", "Time"));
         if (location) {
             headers.add("Location");
         }
@@ -125,7 +132,12 @@ public class NotificationContextFactory {
             headers.add("Notes");
         }
         List<String[]> rows = sessions.stream().map(s -> {
-            List<String> r = new ArrayList<>(List.of(s.getClassDate().format(SHORT_DATE), s.getStartTime() + "–" + s.getEndTime()));
+            List<String> r = new ArrayList<>();
+            if (includeGroup) {
+                r.add(s.getClassGroup().getName());
+            }
+            r.add(s.getClassDate().format(SHORT_DATE));
+            r.add(s.getStartTime() + "–" + s.getEndTime());
             if (location) {
                 r.add(nz(s.getLocation()));
             }
@@ -134,7 +146,63 @@ public class NotificationContextFactory {
             }
             return r.toArray(String[]::new);
         }).toList();
-        return table(headers.toArray(String[]::new), rows) + "\n\nTotal: " + sessions.size() + (sessions.size() == 1 ? " class" : " classes");
+        String table = table(headers.toArray(String[]::new), rows);
+        return sessions.size() == 1 ? table : table + "\n\nTotal: " + sessions.size() + " classes";
+    }
+
+    /** One sentence describing a class that was added, changed or cancelled, for the Class Change messages. */
+    public String describeChange(ClassChangeRequest r) {
+        String now = r.date().format(SHORT_DATE) + ", " + r.startTime() + "–" + r.endTime()
+                + (r.location() == null || r.location().isBlank() ? "" : " at " + r.location().strip());
+        return switch (r.kind()) {
+            case ADDED -> "A class has been added on " + now + ".";
+            case CANCELLED -> "The class on " + now + " is cancelled.";
+            case CHANGED -> {
+                if (r.previousDate() == null) {
+                    yield "The class is now on " + now + ".";
+                }
+                String before = r.previousDate().format(SHORT_DATE)
+                        + (r.previousStartTime() == null ? "" : " (" + r.previousStartTime() + "–" + r.previousEndTime() + ")");
+                yield r.previousDate().equals(r.date()) && !java.util.Objects.equals(r.previousLocation(), r.location())
+                        && r.startTime().equals(r.previousStartTime()) && r.endTime().equals(r.previousEndTime())
+                        ? "The class on " + before + " will now be held at " + (r.location() == null || r.location().isBlank() ? "the usual location" : r.location().strip()) + "."
+                        : "The class on " + before + " has moved to " + now + ".";
+            }
+        };
+    }
+
+    /**
+     * Short one-line form for SMS. Classes at the usual (most common) time are listed as "Oct 1, 6, 8 at 17:00–18:00";
+     * any at another time follow with their own time, e.g. "; Oct 24 at 10:00–11:30".
+     */
+    public String compactDates(List<ClassSession> sessions) {
+        if (sessions.isEmpty()) {
+            return "no classes scheduled";
+        }
+        Map<String, Long> byTime = sessions.stream().collect(java.util.stream.Collectors.groupingBy(
+                s -> s.getStartTime() + "–" + s.getEndTime(), java.util.LinkedHashMap::new, java.util.stream.Collectors.counting()));
+        String usual = byTime.entrySet().stream().max(Map.Entry.comparingByValue()).orElseThrow().getKey();
+        StringBuilder out = new StringBuilder();
+        java.time.Month currentMonth = null;
+        for (ClassSession s : sessions) {
+            if (!usual.equals(s.getStartTime() + "–" + s.getEndTime())) {
+                continue;
+            }
+            java.time.Month m = s.getClassDate().getMonth();
+            if (out.length() > 0) {
+                out.append(", ");
+            }
+            out.append(m == currentMonth ? String.valueOf(s.getClassDate().getDayOfMonth()) : s.getClassDate().format(MONTH_DAY));
+            currentMonth = m;
+        }
+        out.append(" at ").append(usual);
+        for (ClassSession s : sessions) {
+            String t = s.getStartTime() + "–" + s.getEndTime();
+            if (!usual.equals(t)) {
+                out.append("; ").append(s.getClassDate().format(MONTH_DAY)).append(" at ").append(t);
+            }
+        }
+        return out.toString();
     }
 
     private static String table(String[] headers, List<String[]> rows) {

@@ -33,8 +33,6 @@ export const notificationsApi = {
     http.post<BulkSendResult>('/notifications/fee-reminders', { feeIds }).then((r) => r.data),
   feedbackEmail: (studentId: number, month: string) =>
     http.post<Notification>('/notifications/feedback-email', { studentId, month }).then((r) => r.data),
-  scheduleBroadcast: (templateId?: number | null) =>
-    http.post<BulkSendResult>('/notifications/schedule-broadcast', { templateId: templateId ?? null }).then((r) => r.data),
 }
 
 export const templatesApi = {

@@ -3,7 +3,6 @@ import { NavLink, Outlet, useLocation } from 'react-router-dom'
 import {
   Bell,
   CalendarCheck,
-  CalendarDays,
   CalendarRange,
   DollarSign,
   KeyRound,
@@ -35,7 +34,6 @@ const NAV = [
   { to: '/fees/rates', label: 'Fee Rates', icon: Percent },
   { to: '/class-groups', label: 'Class Groups', icon: UsersRound },
   { to: '/feedback', label: 'Feedback', icon: MessageSquareText },
-  { to: '/schedule', label: 'Schedule', icon: CalendarDays },
   { to: '/notifications', label: 'Notifications', icon: Bell },
   { to: '/ask', label: 'Ask', icon: Sparkles },
 ]

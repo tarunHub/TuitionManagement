@@ -21,29 +21,47 @@ public enum BuiltInTemplates {
 
                     Smart Start Tutoring"""),
     MONTHLY_SCHEDULE("Monthly Schedule", NotificationType.SCHEDULE,
-            "{{className}} — class schedule for {{month}}",
+            "{{studentName}} — {{className}} class schedule for {{month}}",
             """
                     Dear {{guardianName}},
 
-                    Here are the {{className}} class dates for {{month}}:
+                    Here are {{studentName}}'s {{className}} class dates for {{month}}:
 
                     {{scheduleTable}}
 
                     Please let us know in advance if your child will miss a class.
 
                     Smart Start Tutoring"""),
+    MONTHLY_SCHEDULE_SMS("Monthly Schedule SMS", NotificationType.SCHEDULE,
+            "SMS schedule: {{className}} — {{month}}",
+            "Smart Start: {{studentName}}'s {{className}} classes in {{month}}: {{classDates}}. Please tell us in advance if {{studentName}} will miss a class."),
     CLASS_REMINDER("Class Reminder", NotificationType.SCHEDULE,
-            "Reminder: {{className}} class on {{date}}",
+            "Reminder: {{studentName}} has class on {{date}}",
             """
                     Dear {{guardianName}},
 
-                    This is a reminder that {{className}} has class on {{date}}:
+                    This is a reminder that {{studentName}} has {{className}} class on {{date}}:
 
                     {{scheduleTable}}
 
                     See you there!
 
                     Smart Start Tutoring"""),
+    CLASS_CHANGE("Class Change", NotificationType.SCHEDULE_CHANGE,
+            "{{className}} class update for {{studentName}}",
+            """
+                    Dear {{guardianName}},
+
+                    Please note a change to {{studentName}}'s {{className}} classes:
+
+                    {{change}}
+
+                    Please contact us if you have any questions.
+
+                    Smart Start Tutoring"""),
+    CLASS_CHANGE_SMS("Class Change SMS", NotificationType.SCHEDULE_CHANGE,
+            "SMS class update: {{className}} — {{studentName}}",
+            "Smart Start: {{studentName}}'s {{className}} class update: {{change}}"),
     FEE_REMINDER("Fee Reminder", NotificationType.FEE_REMINDER,
             "Fee reminder for {{studentName}} — {{month}}",
             """
@@ -71,7 +89,7 @@ public enum BuiltInTemplates {
     // SMS versions of the automated reminders: short, no timetable. The subject is only the title in the history list.
     CLASS_REMINDER_SMS("Class Reminder SMS", NotificationType.SCHEDULE,
             "SMS reminder: {{className}} class on {{date}}",
-            "Smart Start: reminder, {{className}} has class on {{date}}, {{time}} at {{location}}. See you there!"),
+            "Smart Start: reminder, {{studentName}} has class on {{date}}, {{time}} at {{location}}. See you there!"),
     FEE_REMINDER_SMS("Fee Reminder SMS", NotificationType.FEE_REMINDER,
             "SMS fee reminder for {{studentName}} — {{month}}",
             "Smart Start: friendly reminder, {{studentName}}'s fee for {{month}} has {{balance}} outstanding. "

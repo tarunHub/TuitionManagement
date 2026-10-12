@@ -305,6 +305,7 @@ Reusable templates with placeholders: `{{guardianName}}`, `{{studentName}}`, `{{
     - "Mark all present for this day" shortcut on each column header.
 - Month picker (previous/next).
 - Export the month to Excel.
+- **Scheduled days (from the Class Calendar, 6.12):** a day on which the student's batch has a class shows **S** until it is marked. Colours: **S** blue (upcoming), **S** amber (class day has passed but not marked), **P** green, **A** red. Clicking cycles S → P → A → S. A legend and an "N to mark" count sit above the grid. New students get S only from their enrollment date. "Mark all present" on a day marks only the students scheduled that day (everyone, if nothing is scheduled). S is never billed: fees still count only P and A.
 
 ### 6.5 Monthly Fees
 - `/fees?month=2026-08`: table matching the spreadsheet:
@@ -350,7 +351,8 @@ Month selector at the top (defaults to the current month).
 - Students with outstanding balances (top 5)
 - Feedback not yet entered for this month (count + link)
 
-### 6.8 Schedule
+### 6.8 Schedule (replaced by the Class Calendar, 6.12)
+> The weekly Schedule page has been removed from the app; its API remains but nothing in the UI uses it. Original spec kept below for reference.
 - `/schedule`: term config card (Term Start, Term End, Calendar Name, Active).
 - Slots table: Group/Class, Day, Start, End, Subject, Location, Teacher, Recipients (resolved count, expandable), Notes. Full CRUD.
 - Weekly calendar view (Mon–Sun columns) showing slots.
@@ -376,6 +378,17 @@ Text messages are sent from the centre's own Android phone and mobile plan using
 - **Automatic reminders:** when SMS is configured, the class reminder and fee reminder jobs (and the Fees page's **Send fee reminder** button) also text opted-in parents a short message, in addition to the email. Override the wording by creating templates named **"Class Reminder SMS"** / **"Fee Reminder SMS"** (placeholders include `{{time}}` and `{{location}}`). Weekly schedules and monthly feedback stay email-only because they are too long for SMS.
 - **Configuration** (`.env`): `SMS_ENABLED`, `SMS_GATEWAY_URL` (the phone's local server `http://<phone-ip>:8080/message`, or the app's cloud relay `https://api.sms-gate.app/3rdparty/v1/messages`), `SMS_GATEWAY_USERNAME`, `SMS_GATEWAY_PASSWORD`, `SMS_DEFAULT_COUNTRY_CODE`. When not configured the SMS option shows a hint and nothing is sent. Setup steps are in `RUNNING.md`.
 - **Delivery status:** "Sent" means the phone accepted the message into its queue. Failures (phone off, wrong credentials) are recorded with the gateway's error and can be retried.
+
+### 6.12 Class Calendar (monthly, per batch)
+`/calendar?month=2026-10`: a Mon–Sun month view of the days each batch has class (one class per batch per day).
+- Filter by batch; each batch has its own colour. Click a day to add a class (batch, date, start/end time, optional location and notes); click a class to edit or remove it.
+- **Repeat weekly:** pick a batch, weekdays and a time to add a class on every matching day of the month; days that already have a class for that batch are skipped.
+- **Send schedule to parents:** choose **Email**, **SMS** or both. One message per batch (the shown batch, or every batch with classes): the email lists the month's dates, times, location and notes with the total (template **"Monthly Schedule"**, placeholders `{{className}}`, `{{month}}`, `{{scheduleTable}}`); the SMS is one line, e.g. "Batch1 classes in October 2026: Oct 1, 6, 8 at 17:00–18:00; Oct 24 at 10:00–11:30" (template **"Monthly Schedule SMS"**, placeholder `{{classDates}}`). Email goes to parents of active students with an email on file; SMS only to parents who opted in. Sent messages appear under Notifications with Retry on failure.
+- **Personalised:** schedule and reminder messages are sent one per student, so `{{studentName}}` and `{{guardianName}}` are filled in (siblings get one message each).
+- **Automatic reminders (Reminder settings on the page):** on/off, when (on the day of the class, the day before, or two days before), time of day, and email and/or SMS. Stored in the `reminder_settings` table (migration V6); the backend checks once a minute and sends once per day (if the app was off at the set time it catches up later that day). `JOB_CLASS_REMINDER_ENABLED=false` in `.env` is a master off switch. Templates: "Class Reminder" / "Class Reminder SMS". Manual sending: **Send reminder now** in a class's dialog and **Send today's reminders** on the page.
+- **Change notices (on confirmation):** after adding a single class, changing a class's date, time, location or batch, or removing a class, the page asks **"Let parents know?"**; only on **Send notification** does each family get an email (and SMS if opted in) from the **"Class Change"** / **"Class Change SMS"** templates with `{{change}}`, e.g. "The class on Mon, Oct 12 (17:00–18:00) has moved to Tue, Oct 13, 18:00–19:00." Changes to past classes and Repeat weekly don't prompt.
+- Removing a class leaves any P/A already marked for that day (and its billing) untouched.
+- The Class Calendar replaces the old weekly **Schedule** page (removed from the menu; `/schedule` redirects here). Fees' "classes scheduled", the dashboard's upcoming classes, the `{{scheduleTable}}` placeholder in composed notifications and the assistant's schedule answers all come from this calendar.
 
 ### 6.11 Ask (data assistant)
 `/ask` lets the admin ask plain-English questions ("Who still owes fees this month?", "How is Kaya doing?") and get
@@ -444,6 +457,14 @@ Errors use a consistent shape (RFC 7807 style):
 | | `POST /notifications/{id}/send`, `POST /notifications/{id}/retry` | |
 | | `DELETE /notifications/{id}` | Only DRAFT/SCHEDULED |
 | | `GET /notifications/channels` | `{ email, sms, smsMessage }`: whether SMS is configured |
+| Class calendar | `GET /class-calendar?month=YYYY-MM&groupId=` | Class days in the month |
+| | `POST /class-calendar`, `PUT /class-calendar/{id}`, `DELETE /class-calendar/{id}` | Body `{ classGroupId, date, startTime, endTime, location?, notes? }`; 409 if the batch already has a class that day |
+| | `POST /class-calendar/repeat-weekly` | Body `{ classGroupId, month, weekdays: [MONDAY…], startTime, endTime, location? }` → `{ created, skipped }` |
+| | `POST /class-calendar/send-schedule` | Body `{ month, classGroupIds?, channels?: [EMAIL, SMS] }` → bulk send result (one message per batch per channel) |
+| | `POST /class-calendar/{id}/remind` | Send that class's reminder now (email + SMS) |
+| | `POST /class-calendar/remind-today` | Send today's class reminders now |
+| | `GET`/`PUT /class-calendar/reminder-settings` | `{ enabled, daysBefore (0–2), sendTime "HH:mm", sendEmail, sendSms }` (+ `lastRunDate`, `smsAvailable`) |
+| | `POST /class-calendar/notify-change` | Body `{ kind: ADDED\|CHANGED\|CANCELLED, classGroupId, date, startTime, endTime, location?, previousDate?, previousStartTime?, previousEndTime?, previousLocation? }` → bulk send result |
 | Assistant | `POST /chat` | Body `{ messages: [{ role: USER\|ASSISTANT, content }] }` (last = new question) → `{ answer, sources, grounded, toolsUsed, model, durationMs }` |
 | | `GET /chat/status` | `{ enabled, available, model, message }` |
 | | `POST /chat/feedback-draft` | Body `{ studentId, month, notes, topicsTaught, improvementAreas, achievements }` → suggested `{ topicsTaught, improvementAreas, achievements, model, durationMs }` (nothing saved) |

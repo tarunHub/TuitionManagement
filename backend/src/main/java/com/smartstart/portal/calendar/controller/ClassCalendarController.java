@@ -1,11 +1,15 @@
 package com.smartstart.portal.calendar.controller;
 
-import com.smartstart.portal.calendar.dto.ClassCalendarDtos.EmailScheduleRequest;
+import com.smartstart.portal.calendar.dto.ClassCalendarDtos.SendScheduleRequest;
+import com.smartstart.portal.calendar.dto.ClassCalendarDtos.ClassChangeRequest;
+import com.smartstart.portal.calendar.dto.ClassCalendarDtos.ReminderSettingsRequest;
+import com.smartstart.portal.calendar.dto.ClassCalendarDtos.ReminderSettingsResponse;
 import com.smartstart.portal.calendar.dto.ClassCalendarDtos.RepeatWeeklyRequest;
 import com.smartstart.portal.calendar.dto.ClassCalendarDtos.RepeatWeeklyResult;
 import com.smartstart.portal.calendar.dto.ClassCalendarDtos.SessionRequest;
 import com.smartstart.portal.calendar.dto.ClassCalendarDtos.SessionResponse;
 import com.smartstart.portal.calendar.service.ClassSessionService;
+import com.smartstart.portal.calendar.service.ReminderSettingsService;
 import com.smartstart.portal.notification.dto.NotificationDtos.BulkSendResult;
 import com.smartstart.portal.notification.service.NotificationService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -25,6 +29,8 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.time.Clock;
+import java.time.LocalDate;
 import java.time.YearMonth;
 import java.util.List;
 
@@ -36,6 +42,8 @@ public class ClassCalendarController {
 
     private final ClassSessionService service;
     private final NotificationService notifications;
+    private final ReminderSettingsService reminderSettings;
+    private final Clock clock;
 
     @Operation(summary = "Class days in a month, optionally for one batch")
     @GetMapping
@@ -67,9 +75,38 @@ public class ClassCalendarController {
         return service.repeatWeekly(request);
     }
 
-    @Operation(summary = "Email each batch's class dates for the month to its students' parents")
-    @PostMapping("/email")
-    public BulkSendResult email(@Valid @RequestBody EmailScheduleRequest request) {
-        return notifications.monthlySchedule(YearMonth.parse(request.month()), request.classGroupIds());
+    @Operation(summary = "Send each batch's class dates for the month to its parents by email and/or SMS")
+    @PostMapping("/send-schedule")
+    public BulkSendResult sendSchedule(@Valid @RequestBody SendScheduleRequest request) {
+        return notifications.monthlySchedule(YearMonth.parse(request.month()), request.classGroupIds(), request.channels());
+    }
+
+    @Operation(summary = "Automatic class reminder settings")
+    @GetMapping("/reminder-settings")
+    public ReminderSettingsResponse reminderSettings() {
+        return reminderSettings.get();
+    }
+
+    @PutMapping("/reminder-settings")
+    public ReminderSettingsResponse updateReminderSettings(@Valid @RequestBody ReminderSettingsRequest request) {
+        return reminderSettings.update(request);
+    }
+
+    @Operation(summary = "Tell a batch's parents that a class was added, changed or cancelled (after the admin confirms)")
+    @PostMapping("/notify-change")
+    public BulkSendResult notifyChange(@Valid @RequestBody ClassChangeRequest request) {
+        return notifications.classChange(request);
+    }
+
+    @Operation(summary = "Send today's class reminders now")
+    @PostMapping("/remind-today")
+    public BulkSendResult remindToday() {
+        return notifications.classReminders(LocalDate.now(clock));
+    }
+
+    @Operation(summary = "Send the class reminder (email + SMS to opted-in parents) for one class now")
+    @PostMapping("/{id}/remind")
+    public BulkSendResult remind(@PathVariable Long id) {
+        return notifications.classReminder(id);
     }
 }

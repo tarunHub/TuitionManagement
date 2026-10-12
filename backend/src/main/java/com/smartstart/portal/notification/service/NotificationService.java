@@ -48,6 +48,8 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Clock;
 import java.time.Instant;
+import com.smartstart.portal.calendar.dto.ClassCalendarDtos.ChangeKind;
+import com.smartstart.portal.calendar.dto.ClassCalendarDtos.ClassChangeRequest;
 import com.smartstart.portal.calendar.entity.ClassSession;
 import com.smartstart.portal.calendar.service.ClassSessionService;
 import com.smartstart.portal.common.util.AppTime;
@@ -56,6 +58,7 @@ import java.time.YearMonth;
 import java.util.ArrayList;
 import java.util.EnumSet;
 import java.util.LinkedHashMap;
+import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -227,13 +230,15 @@ public class NotificationService {
             if (resolved.student() == null) {
                 // Show realistic per-parent values in the preview even for broadcasts.
                 Map<String, String> sample = contextFactory.sample(month);
-                sample.putAll(Map.of("scheduleTable", ctx.get("scheduleTable"), "className",
+                sample.putAll(Map.of("scheduleTable", ctx.get("scheduleTable"), "classDates", ctx.get("classDates"), "className",
                         resolved.group() != null ? ctx.get("className") : sample.get("className")));
                 ctx = sample;
             }
         } else {
             ctx = contextFactory.sample(month);
-            ctx.put("scheduleTable", contextFactory.scheduleTable(slotService.activeTermSlots(), true));
+            List<ClassSession> sessions = classSessions.sessions(month, null);
+            ctx.put("scheduleTable", contextFactory.sessionTable(sessions, true));
+            ctx.put("classDates", contextFactory.compactDates(sessions));
         }
         return new PreviewResponse(renderer.render(subject, ctx), renderer.render(body, ctx), recipients);
     }
@@ -321,11 +326,15 @@ public class NotificationService {
     }
 
     /**
-     * One SCHEDULE email per batch with that batch's class dates for the month from the class calendar, sent to the
-     * parents of its active students. {@code groupIds} empty means every batch with classes that month.
+     * The month's class dates per batch from the class calendar: one email per batch to the parents of its active
+     * students and/or one SMS per batch to opted-in parents. {@code groupIds} empty means every batch with classes.
      */
     @Transactional
-    public BulkSendResult monthlySchedule(YearMonth month, List<Long> groupIds) {
+    public BulkSendResult monthlySchedule(YearMonth month, List<Long> groupIds, Set<NotificationChannel> channels) {
+        Set<NotificationChannel> wanted = channels == null || channels.isEmpty() ? EnumSet.of(NotificationChannel.EMAIL) : channels;
+        if (wanted.contains(NotificationChannel.SMS) && !sms.isConfigured()) {
+            throw new BadRequestException("SMS_NOT_CONFIGURED", "SMS is not set up (see SMS settings in .env)", "channels");
+        }
         Map<ClassGroup, List<ClassSession>> byGroup = new LinkedHashMap<>();
         classSessions.sessions(month, null).stream()
                 .filter(s -> groupIds == null || groupIds.isEmpty() || groupIds.contains(s.getClassGroup().getId()))
@@ -335,64 +344,130 @@ public class NotificationService {
                     + (groupIds == null || groupIds.isEmpty() ? "" : " for the selected batch"));
         }
         NotificationTemplate template = templateRepository.findByNameIgnoreCase(BuiltInTemplates.MONTHLY_SCHEDULE.templateName()).orElse(null);
-        Map<Long, List<String>> groupEmails = recipientResolver.activeParentEmailsByGroup(
-                byGroup.keySet().stream().map(ClassGroup::getId).toList());
+        NotificationTemplate smsTemplate = templateRepository.findByNameIgnoreCase(BuiltInTemplates.MONTHLY_SCHEDULE_SMS.templateName()).orElse(null);
+
+        // One message per student so {{studentName}} / {{guardianName}} are filled in for each family.
         List<Notification> created = new ArrayList<>();
-        List<String> without = new ArrayList<>();
         for (Map.Entry<ClassGroup, List<ClassSession>> e : byGroup.entrySet()) {
-            List<String> recipients = groupEmails.getOrDefault(e.getKey().getId(), List.of());
-            if (recipients.isEmpty()) {
-                without.add(e.getKey().getName());
-                continue;
+            for (Student student : studentRepository.findActiveInGroups(List.of(e.getKey().getId()))) {
+                Map<String, String> ctx = contextFactory.forStudent(student, month);
+                ctx.put("className", e.getKey().getName());
+                ctx.put("scheduleTable", contextFactory.sessionTable(e.getValue(), false));
+                ctx.put("classDates", contextFactory.compactDates(e.getValue()));
+                created.addAll(sendToFamily(student, NotificationType.SCHEDULE, wanted, ctx, template, BuiltInTemplates.MONTHLY_SCHEDULE,
+                        smsTemplate, BuiltInTemplates.MONTHLY_SCHEDULE_SMS));
             }
-            Map<String, String> ctx = contextFactory.base(month);
-            ctx.put("className", e.getKey().getName());
-            ctx.put("scheduleTable", contextFactory.sessionTable(e.getValue()));
-            created.add(createAndSend(NotificationChannel.EMAIL, NotificationType.SCHEDULE, template, BuiltInTemplates.MONTHLY_SCHEDULE, ctx, recipients));
         }
         if (created.isEmpty()) {
-            throw new BadRequestException("NO_RECIPIENTS", "No parent email addresses on file for " + String.join(", ", without));
+            throw new BadRequestException("NO_RECIPIENTS", noRecipientsMessage(wanted, byGroup.keySet()));
         }
         return result(created);
     }
 
-    /** Reminders for every class occurring on {@code date} (the class-reminder job passes tomorrow). */
+    /**
+     * Same-day reminders (the morning job passes today) for every class on the class calendar that day: email to
+     * the batch's parents and SMS to those who opted in.
+     */
     @Transactional
     public BulkSendResult classReminders(LocalDate date) {
-        Term term = termService.activeTerm().orElse(null);
-        if (term == null || !term.contains(date)) {
-            return new BulkSendResult(0, 0, 0, List.of());
-        }
-        List<ScheduleSlot> slots = slotService.activeTermSlots().stream()
-                .filter(s -> s.getDayOfWeek().toDayOfWeek() == date.getDayOfWeek())
-                .toList();
-        if (slots.isEmpty()) {
-            return new BulkSendResult(0, 0, 0, List.of());
-        }
-        NotificationTemplate template = templateRepository.findByNameIgnoreCase(BuiltInTemplates.CLASS_REMINDER.templateName()).orElse(null);
-        NotificationTemplate smsTemplate = templateRepository.findByNameIgnoreCase(BuiltInTemplates.CLASS_REMINDER_SMS.templateName()).orElse(null);
-        Map<Long, List<String>> groupEmails = recipientResolver.activeParentEmailsByGroup(RecipientResolver.groupIds(slots));
-        Map<Long, List<String>> groupPhones = sms.isConfigured()
-                ? recipientResolver.activeParentPhonesByGroup(RecipientResolver.groupIds(slots), sms.defaultCountryCode())
-                : Map.of();
+        return classReminders(date, availableChannels());
+    }
+
+    /** Reminders for every class on {@code date} over the given channels (the automatic run uses the saved settings). */
+    @Transactional
+    public BulkSendResult classReminders(LocalDate date, Set<NotificationChannel> channels) {
         List<Notification> created = new ArrayList<>();
-        for (ScheduleSlot slot : slots) {
-            Map<String, String> ctx = contextFactory.base(YearMonth.from(date));
-            ctx.put("className", slot.getClassGroup().getName());
-            ctx.put("date", contextFactory.formatDate(date));
-            ctx.put("time", slot.getStartTime() + "–" + slot.getEndTime());
-            ctx.put("location", slot.getLocation() == null || slot.getLocation().isBlank() ? "the usual location" : slot.getLocation());
-            ctx.put("scheduleTable", contextFactory.scheduleTable(List.of(slot), false));
-            List<String> recipients = recipientResolver.forSlot(slot, groupEmails);
-            if (!recipients.isEmpty()) {
-                created.add(createAndSend(NotificationChannel.EMAIL, NotificationType.SCHEDULE, template, BuiltInTemplates.CLASS_REMINDER, ctx, recipients));
-            }
-            List<String> phones = groupPhones.getOrDefault(slot.getClassGroup().getId(), List.of());
-            if (!phones.isEmpty()) {
-                created.add(createAndSend(NotificationChannel.SMS, NotificationType.SCHEDULE, smsTemplate, BuiltInTemplates.CLASS_REMINDER_SMS, ctx, phones));
-            }
+        for (ClassSession session : classSessions.sessionsOn(date)) {
+            created.addAll(remind(session, channels));
         }
         return result(created);
+    }
+
+    /** The "Send reminder now" button: email + SMS reminder for one class on the calendar. */
+    @Transactional
+    public BulkSendResult classReminder(Long sessionId) {
+        ClassSession session = classSessions.require(sessionId);
+        List<Notification> created = remind(session, availableChannels());
+        if (created.isEmpty()) {
+            throw new BadRequestException("NO_RECIPIENTS", noRecipientsMessage(availableChannels(), List.of(session.getClassGroup())));
+        }
+        return result(created);
+    }
+
+    /**
+     * Tells the batch's parents (email, plus SMS to those who opted in) that a class was added, changed or cancelled.
+     * Only called after the admin confirms on the Class Calendar.
+     */
+    @Transactional
+    public BulkSendResult classChange(ClassChangeRequest r) {
+        ClassGroup group = classGroupRepository.findById(r.classGroupId())
+                .orElseThrow(() -> new NotFoundException("Class group", r.classGroupId()));
+        String change = contextFactory.describeChange(r);
+        NotificationType type = r.kind() == ChangeKind.CANCELLED ? NotificationType.CLASS_CANCELLED : NotificationType.SCHEDULE_CHANGE;
+        NotificationTemplate template = templateRepository.findByNameIgnoreCase(BuiltInTemplates.CLASS_CHANGE.templateName()).orElse(null);
+        NotificationTemplate smsTemplate = templateRepository.findByNameIgnoreCase(BuiltInTemplates.CLASS_CHANGE_SMS.templateName()).orElse(null);
+        List<Notification> created = new ArrayList<>();
+        for (Student student : studentRepository.findActiveInGroups(List.of(group.getId()))) {
+            Map<String, String> ctx = contextFactory.forStudent(student, YearMonth.from(r.date()));
+            ctx.put("className", group.getName());
+            ctx.put("date", contextFactory.formatDate(r.date()));
+            ctx.put("time", r.startTime() + "–" + r.endTime());
+            ctx.put("location", r.location() == null || r.location().isBlank() ? "the usual location" : r.location().strip());
+            ctx.put("change", change);
+            created.addAll(sendToFamily(student, type, availableChannels(), ctx, template, BuiltInTemplates.CLASS_CHANGE,
+                    smsTemplate, BuiltInTemplates.CLASS_CHANGE_SMS));
+        }
+        if (created.isEmpty()) {
+            throw new BadRequestException("NO_RECIPIENTS", noRecipientsMessage(availableChannels(), List.of(group)));
+        }
+        return result(created);
+    }
+
+    private Set<NotificationChannel> availableChannels() {
+        return sms.isConfigured() ? EnumSet.of(NotificationChannel.EMAIL, NotificationChannel.SMS) : EnumSet.of(NotificationChannel.EMAIL);
+    }
+
+    /** One reminder per active student in the class's batch: email to the parent, SMS if they opted in. */
+    private List<Notification> remind(ClassSession session, Set<NotificationChannel> channels) {
+        ClassGroup group = session.getClassGroup();
+        NotificationTemplate template = templateRepository.findByNameIgnoreCase(BuiltInTemplates.CLASS_REMINDER.templateName()).orElse(null);
+        NotificationTemplate smsTemplate = templateRepository.findByNameIgnoreCase(BuiltInTemplates.CLASS_REMINDER_SMS.templateName()).orElse(null);
+        List<Notification> created = new ArrayList<>();
+        for (Student student : studentRepository.findActiveInGroups(List.of(group.getId()))) {
+            Map<String, String> ctx = contextFactory.forStudent(student, YearMonth.from(session.getClassDate()));
+            ctx.put("className", group.getName());
+            ctx.put("date", contextFactory.formatDate(session.getClassDate()));
+            ctx.put("time", session.getStartTime() + "–" + session.getEndTime());
+            ctx.put("location", session.getLocation() == null ? "the usual location" : session.getLocation());
+            ctx.put("scheduleTable", contextFactory.sessionTable(List.of(session), false));
+            created.addAll(sendToFamily(student, NotificationType.SCHEDULE, channels, ctx, template, BuiltInTemplates.CLASS_REMINDER,
+                    smsTemplate, BuiltInTemplates.CLASS_REMINDER_SMS));
+        }
+        return created;
+    }
+
+    /** Email to the student's parent (if on file) and SMS (if opted in with a valid number) for the wanted channels. */
+    private List<Notification> sendToFamily(Student student, NotificationType type, Set<NotificationChannel> channels, Map<String, String> ctx,
+                                            NotificationTemplate emailTemplate, BuiltInTemplates emailFallback,
+                                            NotificationTemplate smsTemplate, BuiltInTemplates smsFallback) {
+        List<Notification> created = new ArrayList<>();
+        if (channels.contains(NotificationChannel.EMAIL) && student.getEmail() != null && !student.getEmail().isBlank()) {
+            created.add(createAndSend(NotificationChannel.EMAIL, type, emailTemplate, emailFallback, ctx,
+                    List.of(student.getEmail().trim())));
+        }
+        if (channels.contains(NotificationChannel.SMS)) {
+            RecipientResolver.smsNumber(student, sms.defaultCountryCode()).ifPresent(phone -> created.add(
+                    createAndSend(NotificationChannel.SMS, type, smsTemplate, smsFallback, ctx, List.of(phone))));
+        }
+        return created;
+    }
+
+    private static String noRecipientsMessage(Set<NotificationChannel> channels, Collection<ClassGroup> groups) {
+        String who = channels.contains(NotificationChannel.SMS) && channels.contains(NotificationChannel.EMAIL)
+                ? "a parent email or an SMS opt-in"
+                : channels.contains(NotificationChannel.SMS) ? "a parent who opted in to SMS" : "a parent email address";
+        return "No active student in " + groups.stream().map(ClassGroup::getName).collect(Collectors.joining(", ")) + " has " + who
+                + ". Add it on the Students page.";
     }
 
     /** Fee reminders for the given month's Unpaid/Partial fees (the monthly job passes the previous month). */
@@ -460,16 +535,15 @@ public class NotificationService {
         } else {
             ctx = contextFactory.base(month);
         }
-        List<ScheduleSlot> slots = slotService.activeTermSlots();
+        // {{scheduleTable}} / {{classDates}}: the month's class calendar (one batch, or all batches with a Batch column).
         ClassGroup group = resolved.group() != null ? resolved.group()
                 : resolved.student() != null ? resolved.student().getClassGroup() : null;
+        List<ClassSession> sessions = classSessions.sessions(month, group == null ? null : group.getId());
         if (group != null) {
             ctx.put("className", group.getName());
-            ctx.put("scheduleTable", contextFactory.scheduleTable(
-                    slots.stream().filter(s -> s.getClassGroup().getId().equals(group.getId())).toList(), false));
-        } else {
-            ctx.put("scheduleTable", contextFactory.scheduleTable(slots, true));
         }
+        ctx.put("scheduleTable", contextFactory.sessionTable(sessions, group == null));
+        ctx.put("classDates", contextFactory.compactDates(sessions));
         return ctx;
     }
 

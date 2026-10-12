@@ -13,7 +13,6 @@ import { NotificationsPage } from '@/features/notifications/NotificationsPage'
 import { ChatPage } from '@/features/chat/ChatPage'
 import { TemplatesPage } from '@/features/notifications/TemplatesPage'
 import { GradeRatesPage } from '@/features/rates/GradeRatesPage'
-import { SchedulePage } from '@/features/schedule/SchedulePage'
 import { ClassCalendarPage } from '@/features/calendar/ClassCalendarPage'
 import { StudentDetailPage } from '@/features/students/StudentDetailPage'
 import { StudentFormPage } from '@/features/students/StudentFormPage'
@@ -65,7 +64,7 @@ export const router = createBrowserRouter([
           { path: '/class-groups', element: <ClassGroupsPage /> },
           { path: '/feedback', element: <FeedbackPage /> },
           { path: '/feedback/:studentId/report', element: <FeedbackReportPage /> },
-          { path: '/schedule', element: <SchedulePage /> },
+          { path: '/schedule', element: <Navigate to="/calendar" replace /> },
           { path: '/calendar', element: <ClassCalendarPage /> },
           { path: '/notifications', element: <NotificationsPage /> },
           { path: '/ask', element: <ChatPage /> },

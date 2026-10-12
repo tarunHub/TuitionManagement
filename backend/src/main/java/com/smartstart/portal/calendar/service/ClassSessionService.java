@@ -44,6 +44,12 @@ public class ClassSessionService {
         return repository.findBetween(month.atDay(1), month.atEndOfMonth(), groupId);
     }
 
+    /** Classes on one day (for the morning reminders). */
+    @Transactional(readOnly = true)
+    public List<ClassSession> sessionsOn(LocalDate date) {
+        return repository.findBetween(date, date, null);
+    }
+
     /** Batch id → days of the month that batch has class. */
     @Transactional(readOnly = true)
     public Map<Long, Set<LocalDate>> datesByGroup(YearMonth month) {
@@ -117,7 +123,7 @@ public class ClassSessionService {
         return new RepeatWeeklyResult(created.size(), skipped);
     }
 
-    private ClassSession require(Long id) {
+    public ClassSession require(Long id) {
         return repository.findById(id).orElseThrow(() -> new NotFoundException("Class", id));
     }
 

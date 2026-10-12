@@ -19,9 +19,8 @@ import com.smartstart.portal.fee.entity.FeeStatus;
 import com.smartstart.portal.fee.service.FeeService;
 import com.smartstart.portal.feedback.dto.FeedbackDtos.FeedbackRowResponse;
 import com.smartstart.portal.feedback.service.FeedbackService;
-import com.smartstart.portal.schedule.dto.ScheduleDtos.SlotResponse;
-import com.smartstart.portal.schedule.service.ScheduleSlotService;
-import com.smartstart.portal.schedule.service.TermService;
+import com.smartstart.portal.calendar.entity.ClassSession;
+import com.smartstart.portal.calendar.service.ClassSessionService;
 import com.smartstart.portal.student.dto.StudentDtos.StudentFilter;
 import com.smartstart.portal.student.dto.StudentDtos.StudentResponse;
 import com.smartstart.portal.student.entity.StudentStatus;
@@ -65,14 +64,13 @@ public class ChatTools {
     private final StudentService students;
     private final ClassGroupService groups;
     private final DashboardService dashboard;
-    private final TermService terms;
-    private final ScheduleSlotService slots;
+    private final ClassSessionService classSessions;
     private final Clock clock;
     private final Map<String, Tool> tools = new LinkedHashMap<>();
 
     public ChatTools(ObjectMapper mapper, FeeService fees, AttendanceService attendance, FeedbackService feedback,
-                     StudentService students, ClassGroupService groups, DashboardService dashboard, TermService terms,
-                     ScheduleSlotService slots, Clock clock) {
+                     StudentService students, ClassGroupService groups, DashboardService dashboard,
+                     ClassSessionService classSessions, Clock clock) {
         this.mapper = mapper;
         this.fees = fees;
         this.attendance = attendance;
@@ -80,8 +78,7 @@ public class ChatTools {
         this.students = students;
         this.groups = groups;
         this.dashboard = dashboard;
-        this.terms = terms;
-        this.slots = slots;
+        this.classSessions = classSessions;
         this.clock = clock;
         register();
     }
@@ -153,9 +150,9 @@ public class ChatTools {
                 params(month(true), prop("name", "string", "Optional student name filter")),
                 this::feedbackFor);
         add("get_schedule", """
-                        The active term (start/end dates) and the weekly class timetable (batch, day, time, subject, location, teacher).""",
-                params(),
-                a -> schedule());
+                        Class calendar for ONE month: every class date with batch, weekday, time, location and notes, plus                         the number of classes per batch. Optional batch filter. Use for "when is class", "how many classes"                         or "is there class on ..." questions.""",
+                params(month(true), batch()),
+                a -> schedule(month(a), batchId(a)));
     }
 
     private ToolResult feesFor(YearMonth month, Long batchId) {
@@ -325,26 +322,27 @@ public class ChatTools {
         return new ToolResult(out, new ChatSource("Feedback · " + AppTime.monthLabel(month), "/feedback?month=" + month));
     }
 
-    private ToolResult schedule() {
+    private ToolResult schedule(YearMonth month, Long batchId) {
+        List<ClassSession> list = classSessions.sessions(month, batchId);
         Map<String, Object> out = new LinkedHashMap<>();
-        terms.active().ifPresentOrElse(t -> {
-            out.put("term", Map.of("name", t.name(), "start", t.startDate(), "end", t.endDate()));
-            List<SlotResponse> list = slots.list(t.id());
-            out.put("classes", list.stream().map(s -> {
-                Map<String, Object> m = new LinkedHashMap<>();
-                m.put("batch", s.classGroupName());
-                m.put("day", s.dayOfWeek());
-                m.put("time", s.startTime() + "–" + s.endTime());
-                m.put("subject", s.subject());
-                m.put("location", s.location());
-                m.put("teacher", s.teacher());
-                return m;
-            }).toList());
-            if (list.isEmpty()) {
-                out.put("note", "No weekly classes have been added to the schedule yet.");
-            }
-        }, () -> out.put("note", "No active term is set up."));
-        return new ToolResult(out, new ChatSource("Schedule", "/schedule"));
+        out.put("month", AppTime.monthLabel(month));
+        out.put("classes", list.stream().map(s -> {
+            Map<String, Object> m = new LinkedHashMap<>();
+            m.put("date", s.getClassDate());
+            m.put("weekday", s.getClassDate().getDayOfWeek());
+            m.put("batch", s.getClassGroup().getName());
+            m.put("time", s.getStartTime() + "–" + s.getEndTime());
+            m.put("location", s.getLocation());
+            m.put("notes", s.getNotes());
+            return m;
+        }).toList());
+        Map<String, Long> perBatch = new LinkedHashMap<>();
+        list.forEach(s -> perBatch.merge(s.getClassGroup().getName(), 1L, Long::sum));
+        out.put("classesPerBatch", perBatch);
+        if (list.isEmpty()) {
+            out.put("note", "No classes are on the class calendar for this month.");
+        }
+        return new ToolResult(out, new ChatSource("Class Calendar · " + AppTime.monthLabel(month), "/calendar?month=" + month));
     }
 
     // ------------------------------------------------------------------ helpers
