@@ -18,8 +18,8 @@ import java.time.YearMonth;
 @RequiredArgsConstructor
 public class FeeExportService {
 
-    private static final String[] HEADERS = {"Student ID", "Name", "Grade", "Rate ($/class)", "Classes Held (billed)",
-            "Classes Scheduled", "Amount Due", "Amount Paid", "Balance", "Status", "Last Payment Date", "Method", "Notes"};
+    private static final String[] HEADERS = {"Student ID", "Name", "Grade", "Rate ($/class)", "Classes Held",
+            "Classes Scheduled (billed)", "Amount Due", "Amount Paid", "Balance", "Status", "Last Payment Date", "Method", "Notes"};
 
     private final FeeService feeService;
 

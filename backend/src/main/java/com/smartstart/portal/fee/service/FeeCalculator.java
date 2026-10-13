@@ -13,9 +13,10 @@ public class FeeCalculator {
 
     private static final BigDecimal HUNDRED = BigDecimal.valueOf(100);
 
-    /** Rule 4: amount due = classes held (present + absent) × rate. */
-    public BigDecimal amountDue(int classesHeld, BigDecimal rate) {
-        return Money.scale(Money.nz(rate).multiply(BigDecimal.valueOf(Math.max(classesHeld, 0))));
+    /** Rule 4: amount due = classes scheduled on the class calendar × rate. */
+    public BigDecimal amountDue(Integer classesScheduled, BigDecimal rate) {
+        int classes = classesScheduled == null ? 0 : Math.max(classesScheduled, 0);
+        return Money.scale(Money.nz(rate).multiply(BigDecimal.valueOf(classes)));
     }
 
     public BigDecimal balance(BigDecimal amountDue, BigDecimal amountPaid) {

@@ -17,19 +17,17 @@ interface Props {
   onOpenChange: (open: boolean) => void
   onEditPayment: (payment: Payment) => void
   onDeletePayment: (payment: Payment) => void
-  onSaveFee: (input: { classesScheduled: number | null; notes: string | null; rate: number }) => void
+  onSaveFee: (input: { notes: string | null; rate: number }) => void
   savingFee: boolean
 }
 
-/** Payment history for one fee row, plus editing of classes scheduled / notes / rate snapshot. */
+/** Payment history for one fee row, plus editing of notes / rate snapshot. */
 export function FeeDetailsDialog({ fee, open, onOpenChange, onEditPayment, onDeletePayment, onSaveFee, savingFee }: Props) {
-  const [scheduled, setScheduled] = useState('')
   const [notes, setNotes] = useState('')
   const [rate, setRate] = useState('')
 
   useEffect(() => {
     if (fee && open) {
-      setScheduled(fee.classesScheduled === null ? '' : String(fee.classesScheduled))
       setNotes(fee.notes ?? '')
       setRate(String(fee.rate))
     }
@@ -37,7 +35,6 @@ export function FeeDetailsDialog({ fee, open, onOpenChange, onEditPayment, onDel
 
   if (!fee) return null
   const rateValid = rate !== '' && Number(rate) >= 0
-  const scheduledValid = scheduled === '' || (Number.isInteger(Number(scheduled)) && Number(scheduled) >= 0)
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -81,12 +78,9 @@ export function FeeDetailsDialog({ fee, open, onOpenChange, onEditPayment, onDel
         <section className="space-y-3 border-t pt-4">
           <h3 className="text-sm font-semibold">Fee details</h3>
           <p className="text-xs text-muted-foreground">
-            Classes held ({fee.classesHeld}) come from attendance. The rate is a snapshot taken when the fee was generated.
+            Amount due = {fee.classesScheduled ?? 0} classes scheduled on the Class Calendar × rate. Classes held ({fee.classesHeld}) come from attendance. The rate is a snapshot taken when the fee was generated.
           </p>
-          <div className="grid gap-3 sm:grid-cols-3">
-            <FormField id="fee-scheduled" label="Classes scheduled" error={scheduledValid ? undefined : 'Whole number ≥ 0'}>
-              <Input id="fee-scheduled" type="number" min="0" value={scheduled} onChange={(e) => setScheduled(e.target.value)} />
-            </FormField>
+          <div className="grid gap-3 sm:grid-cols-2">
             <FormField id="fee-rate" label="Rate ($/class)" error={rateValid ? undefined : 'Must be ≥ 0'}>
               <Input id="fee-rate" type="number" min="0" step="0.01" value={rate} onChange={(e) => setRate(e.target.value)} />
             </FormField>
@@ -96,8 +90,8 @@ export function FeeDetailsDialog({ fee, open, onOpenChange, onEditPayment, onDel
           </div>
           <div className="flex justify-end">
             <Button
-              disabled={savingFee || !rateValid || !scheduledValid}
-              onClick={() => onSaveFee({ classesScheduled: scheduled === '' ? null : Number(scheduled), notes: notes.trim() || null, rate: Number(rate) })}
+              disabled={savingFee || !rateValid}
+              onClick={() => onSaveFee({ notes: notes.trim() || null, rate: Number(rate) })}
             >
               Save fee details
             </Button>

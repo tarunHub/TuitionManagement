@@ -12,6 +12,7 @@ import com.smartstart.portal.common.exception.BadRequestException;
 import com.smartstart.portal.common.exception.ConflictException;
 import com.smartstart.portal.common.exception.NotFoundException;
 import lombok.RequiredArgsConstructor;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -32,6 +33,7 @@ public class ClassSessionService {
 
     private final ClassSessionRepository repository;
     private final ClassGroupService groups;
+    private final ApplicationEventPublisher events;
 
     @Transactional(readOnly = true)
     public List<SessionResponse> list(YearMonth month, Long groupId) {
@@ -70,7 +72,9 @@ public class ClassSessionService {
         ClassSession s = new ClassSession();
         s.setClassGroup(group);
         apply(s, request);
-        return toResponse(repository.saveAndFlush(s));
+        SessionResponse saved = toResponse(repository.saveAndFlush(s));
+        changed(request.date());
+        return saved;
     }
 
     @Transactional
@@ -81,15 +85,21 @@ public class ClassSessionService {
         if (repository.existsByClassGroupIdAndClassDateAndIdNot(group.getId(), request.date(), id)) {
             throw duplicate(group, request.date());
         }
+        LocalDate previousDate = s.getClassDate();
         s.setClassGroup(group);
         apply(s, request);
-        return toResponse(repository.saveAndFlush(s));
+        SessionResponse saved = toResponse(repository.saveAndFlush(s));
+        changed(previousDate, request.date());
+        return saved;
     }
 
-    /** Removes the class day only; attendance already marked for it is kept (and still billed). */
+    /** Removes the class day only; attendance already marked for it is kept. */
     @Transactional
     public void delete(Long id) {
-        repository.delete(require(id));
+        ClassSession s = require(id);
+        repository.delete(s);
+        repository.flush();
+        changed(s.getClassDate());
     }
 
     @Transactional
@@ -119,8 +129,19 @@ public class ClassSessionService {
             s.setLocation(blankToNull(request.location()));
             created.add(s);
         }
-        repository.saveAll(created);
+        repository.saveAllAndFlush(created);
+        if (!created.isEmpty()) {
+            changed(month.atDay(1));
+        }
         return new RepeatWeeklyResult(created.size(), skipped);
+    }
+
+    private void changed(LocalDate... dates) {
+        Set<YearMonth> months = new HashSet<>();
+        for (LocalDate d : dates) {
+            months.add(YearMonth.from(d));
+        }
+        events.publishEvent(new ClassCalendarChanged(months));
     }
 
     public ClassSession require(Long id) {

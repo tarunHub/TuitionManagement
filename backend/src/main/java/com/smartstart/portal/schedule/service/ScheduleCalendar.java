@@ -29,12 +29,12 @@ public class ScheduleCalendar {
 
     private final ClassSessionRepository sessionRepository;
 
-    /** Number of classes per batch on the class calendar in the month. Batches without classes are absent. */
+    /** Class days per batch on the class calendar in the month. Batches without classes are absent. */
     @Transactional(readOnly = true)
-    public Map<Long, Integer> classesScheduledByGroup(YearMonth month) {
-        Map<Long, Integer> out = new HashMap<>();
+    public Map<Long, List<LocalDate>> classDatesByGroup(YearMonth month) {
+        Map<Long, List<LocalDate>> out = new HashMap<>();
         for (ClassSession s : sessionRepository.findBetween(month.atDay(1), month.atEndOfMonth(), null)) {
-            out.merge(s.getClassGroup().getId(), 1, Integer::sum);
+            out.computeIfAbsent(s.getClassGroup().getId(), k -> new ArrayList<>()).add(s.getClassDate());
         }
         return out;
     }

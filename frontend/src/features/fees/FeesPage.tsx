@@ -79,7 +79,7 @@ export function FeesPage() {
   })
 
   const saveFee = useMutation({
-    mutationFn: (input: { classesScheduled: number | null; notes: string | null; rate: number }) => feesApi.update(detailsId!, input),
+    mutationFn: (input: { notes: string | null; rate: number }) => feesApi.update(detailsId!, input),
     onSuccess: () => {
       toast.success('Fee updated')
       invalidate()
@@ -139,8 +139,8 @@ export function FeesPage() {
     { accessorKey: 'fullName', header: 'Name', enableHiding: false, meta: nowrap, cell: ({ getValue }) => <span className="font-medium">{getValue<string>()}</span> },
     { accessorKey: 'grade', header: 'Grade' },
     { accessorKey: 'rate', header: 'Rate ($/class)', cell: ({ getValue }) => money(getValue<number>()), meta: right },
-    { accessorKey: 'classesHeld', header: 'Classes Held (billed)', meta: right },
-    { accessorKey: 'classesScheduled', header: 'Classes Scheduled', cell: ({ getValue }) => getValue<number | null>() ?? '—', meta: right },
+    { accessorKey: 'classesHeld', header: 'Classes Held', meta: right },
+    { accessorKey: 'classesScheduled', header: 'Classes Scheduled (billed)', cell: ({ getValue }) => getValue<number | null>() ?? '—', meta: right },
     { accessorKey: 'amountDue', header: 'Amount Due', cell: ({ getValue }) => money(getValue<number>()), meta: right },
     { accessorKey: 'amountPaid', header: 'Amount Paid', cell: ({ getValue }) => money(getValue<number>()), meta: right },
     {
@@ -178,7 +178,7 @@ export function FeesPage() {
     <div>
       <PageHeader
         title="Monthly Fees"
-        description={`${formatMonth(month)} — amount due = classes held (present + absent) × rate.`}
+        description={`${formatMonth(month)} — amount due = classes scheduled on the Class Calendar × rate.`}
         actions={
           <>
             <Button variant="outline" onClick={exportXlsx} data-testid="export-fees"><Download /> Export Excel</Button>

@@ -2,6 +2,7 @@ package com.smartstart.portal.fee.service;
 
 import com.smartstart.portal.attendance.dto.AttendanceDtos.StudentAttendanceCount;
 import com.smartstart.portal.attendance.repository.AttendanceRepository;
+import com.smartstart.portal.calendar.service.ClassCalendarChanged;
 import com.smartstart.portal.common.exception.BadRequestException;
 import com.smartstart.portal.common.exception.NotFoundException;
 import com.smartstart.portal.common.util.Money;
@@ -25,6 +26,7 @@ import com.smartstart.portal.student.entity.Student;
 import com.smartstart.portal.student.repository.StudentRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -73,7 +75,8 @@ public class FeeService {
 
     /**
      * Rule 5: creates or refreshes one fee per ACTIVE student for the month. Idempotent; never touches payments.
-     * Existing rows keep their rate snapshot (rule 3) and any manually entered classes_scheduled.
+     * Existing rows keep their rate snapshot (rule 3). Classes scheduled come from the class calendar and the
+     * amount due is scheduled × rate (rule 4); classes held are kept for information.
      */
     @Transactional
     public GenerateFeesResponse generate(YearMonth month) {
@@ -82,7 +85,7 @@ public class FeeService {
                 .collect(Collectors.toMap(StudentAttendanceCount::studentId, Function.identity()));
         Map<Long, MonthlyFee> existing = feeRepository.findByMonthWithStudent(feeMonth).stream()
                 .collect(Collectors.toMap(f -> f.getStudent().getId(), Function.identity()));
-        Map<Long, Integer> scheduledByGroup = scheduleCalendar.classesScheduledByGroup(month);
+        Map<Long, List<LocalDate>> classDates = scheduleCalendar.classDatesByGroup(month);
 
         int created = 0;
         int updated = 0;
@@ -103,13 +106,10 @@ public class FeeService {
                 updated++;
             }
             StudentAttendanceCount c = counts.get(student.getId());
-            int held = c == null ? 0 : (int) c.held();
-            fee.setClassesHeld(held);
-            if (!fee.isScheduledOverride()) {
-                Long groupId = student.getClassGroup() == null ? null : student.getClassGroup().getId();
-                fee.setClassesScheduled(groupId == null ? null : scheduledByGroup.get(groupId));
+            fee.setClassesHeld(c == null ? 0 : (int) c.held());
+            if (fee.getId() == null || !classDates.isEmpty()) {
+                applySchedule(fee, classDates);
             }
-            fee.setAmountDue(calculator.amountDue(held, fee.getRate()));
             toSave.add(fee);
         }
         feeRepository.saveAll(toSave);
@@ -117,18 +117,41 @@ public class FeeService {
         return new GenerateFeesResponse(month.toString(), created, updated, list(month, null, null));
     }
 
+    /** Keeps existing fees in step with the class calendar when classes are added, moved or removed. */
+    @EventListener
+    @Transactional
+    public void onCalendarChanged(ClassCalendarChanged event) {
+        for (YearMonth month : event.months()) {
+            Map<Long, List<LocalDate>> classDates = scheduleCalendar.classDatesByGroup(month);
+            List<MonthlyFee> fees = feeRepository.findByMonthWithStudent(month.atDay(1));
+            fees.forEach(f -> applySchedule(f, classDates));
+            log.info("Recounted classes scheduled for {} fee(s) in {}", fees.size(), month);
+        }
+    }
+
+    /**
+     * Scheduled = the batch's calendar days in the month on or after the enrollment date; due = scheduled × rate.
+     * A month with no classes on the calendar at all (before the calendar was used) leaves existing fees alone.
+     */
+    private void applySchedule(MonthlyFee fee, Map<Long, List<LocalDate>> classDates) {
+        Student s = fee.getStudent();
+        List<LocalDate> dates = s.getClassGroup() == null ? List.of() : classDates.getOrDefault(s.getClassGroup().getId(), List.of());
+        int scheduled = (int) dates.stream()
+                .filter(d -> s.getEnrollmentDate() == null || !d.isBefore(s.getEnrollmentDate()))
+                .count();
+        fee.setClassesScheduled(scheduled);
+        fee.setScheduledOverride(false);
+        fee.setAmountDue(calculator.amountDue(scheduled, fee.getRate()));
+    }
+
     @Transactional
     public FeeRowResponse update(Long feeId, UpdateMonthlyFeeRequest request) {
         MonthlyFee fee = requireFee(feeId);
-        if (request.classesScheduled() != null) {
-            fee.setClassesScheduled(request.classesScheduled());
-            fee.setScheduledOverride(true);
-        }
         fee.setNotes(request.notes() == null || request.notes().isBlank() ? null : request.notes().trim());
         if (request.rate() != null) {
             fee.setRate(Money.scale(request.rate()));
         }
-        fee.setAmountDue(calculator.amountDue(fee.getClassesHeld(), fee.getRate()));
+        fee.setAmountDue(calculator.amountDue(fee.getClassesScheduled(), fee.getRate()));
         return toRows(List.of(fee)).getFirst();
     }
 

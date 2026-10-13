@@ -14,7 +14,7 @@ export const feesApi = {
   generate: (month: string) =>
     http.post<{ month: string; created: number; updated: number; fees: FeeList }>('/fees/generate', null, { params: { month } })
       .then((r) => r.data),
-  update: (id: number, input: { classesScheduled?: number | null; notes?: string | null; rate?: number | null }) =>
+  update: (id: number, input: { notes?: string | null; rate?: number | null }) =>
     http.put<FeeRow>(`/fees/${id}`, input).then((r) => r.data),
   addPayment: (feeId: number, input: PaymentInput) =>
     http.post<FeeRow>(`/fees/${feeId}/payments`, input).then((r) => r.data),

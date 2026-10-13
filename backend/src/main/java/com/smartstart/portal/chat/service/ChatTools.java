@@ -174,6 +174,7 @@ public class ChatTools {
             m.put("name", r.fullName());
             m.put("batch", r.classGroupName());
             m.put("grade", r.grade());
+            m.put("classesScheduled", r.classesScheduled());
             m.put("classesHeld", r.classesHeld());
             m.put("rate", r.rate());
             m.put("amountDue", r.amountDue());
