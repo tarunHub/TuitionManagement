@@ -1,0 +1,26 @@
+# Secrets and local data
+.env
+secrets/*
+!secrets/.gitkeep
+backups/
+
+# Build output and dependencies
+node_modules/
+build/
+dist/
+.gradle/
+*.log
+
+# Playwright
+e2e/test-results/
+e2e/playwright-report/
+e2e/.auth/
+
+# IDE / OS
+.idea/
+*.iml
+.DS_Store
+
+#Backend
+backend/build
+backend/.gradle
