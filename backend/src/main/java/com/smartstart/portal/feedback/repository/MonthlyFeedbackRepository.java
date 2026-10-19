@@ -21,6 +21,9 @@ public interface MonthlyFeedbackRepository extends JpaRepository<MonthlyFeedback
 
     List<MonthlyFeedback> findByStudentIdOrderByFeedbackMonthDesc(Long studentId);
 
+    @Query("select f.student.id from MonthlyFeedback f where f.feedbackMonth = :month")
+    List<Long> findStudentIdsForMonth(@Param("month") LocalDate month);
+
     @Query("""
             select count(s) from Student s
             where s.status = com.smartstart.portal.student.entity.StudentStatus.ACTIVE

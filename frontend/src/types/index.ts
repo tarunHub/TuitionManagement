@@ -411,6 +411,27 @@ export interface PreviewResult {
   recipients: string[]
 }
 
+/** One email or SMS ready to go, shown for review before sending. */
+export interface OutgoingMessage {
+  studentId: number
+  studentName: string
+  className: string
+  channel: NotificationChannel
+  type: NotificationType
+  templateId: number | null
+  recipient: string
+  subject: string
+  body: string
+}
+
+export interface MessagePreview {
+  messages: OutgoingMessage[]
+  /** Students with no parent email or SMS opt-in. */
+  skipped: string[]
+}
+
+export type MessageToSend = Pick<OutgoingMessage, 'studentId' | 'channel' | 'type' | 'templateId' | 'subject' | 'body'>
+
 export interface BulkSendResult {
   created: number
   sent: number

@@ -39,28 +39,27 @@ cd frontend && npm install && npm run dev
 
 `npm run build` type-checks and produces a production bundle in `frontend/dist`.
 
-## End-to-end tests (Playwright)
+## UI tests (Playwright + test agents)
 
-With the stack running (Docker or local):
+The Playwright suite lives in `playwright-agents/` and is written with Playwright's planner / generator / healer
+agents. With the stack running:
 
 ```bash
-cd e2e && npm install && npx playwright install chromium
-npx playwright test
+cd playwright-agents && npm install && npx playwright install chromium
+npm test
 ```
 
-**Always start the backend with the E2E overlay before running the tests.** It sends all email to MailHog and all SMS
-to `sms-sink` (a small stand-in for the Android gateway, `e2e/sms-sink/server.mjs`, listing what it received at
-http://localhost:8090/messages), whatever `.env` says, so tests never email or text real people. Switch back afterwards:
+Setup, writing tests from the live app or from a requirement that is not built yet, and using the agents are all
+described in `playwright-agents/README.md`.
+
+Tests that send email, SMS or use the Ask assistant must run with the test overlay, which sends all email to MailHog,
+all SMS to `sms-sink` (`playwright-agents/stubs/sms-sink`, listing what it received at http://localhost:8090/messages)
+and the assistant to a scripted fake Ollama, whatever `.env` says. Switch back afterwards:
 
 ```bash
 docker compose -f docker-compose.yml -f docker-compose.e2e.yml up -d backend   # before the tests
 docker compose up -d backend                                                   # back to .env's email/SMS settings
 ```
-
-Credentials are read from `E2E_USERNAME`/`E2E_PASSWORD`, falling back to `ADMIN_USERNAME`/`ADMIN_PASSWORD` in `../.env`.
-The suite seeds its own data through the API (unique groups/students per run) and retires it afterwards;
-the failed-login test uses a throwaway username so it never locks the real admin.
-No unit/integration tests have been written yet.
 
 ## SMS via an Android phone (optional)
 
@@ -124,7 +123,7 @@ Check accuracy after changing the model or the tools (uses the real model and da
 python3 tools/chat_eval.py        # 20 questions with known answers; update expectations when the data changes
 ```
 
-The E2E suite does not use Ollama: the overlay starts `e2e/fake-ollama`, a scripted stand-in.
+UI tests do not use the real Ollama: the test overlay starts `playwright-agents/stubs/fake-ollama`, a scripted stand-in.
 
 ## Monthly class calendar
 
@@ -133,7 +132,7 @@ The E2E suite does not use Ollama: the overlay starts `e2e/fake-ollama`, a scrip
    remove single classes (holidays, extra classes).
 3. **Send schedule to parents** sends each batch's dates by email and/or SMS (needs email / SMS set up in `.env`).
    Automatic reminders are set under **Reminder settings** on the Class Calendar (default 8 AM on the class day,
-   email + SMS). **Send reminder now** (in a class) and **Send today's reminders** send them on demand. After you
+   email + SMS). **Send reminder now** (in a class) and **Send today's reminders** send them on demand, after a review window where you can untick students and edit each message. After you
    add, move or remove a class, the page asks whether to notify parents.
 4. On **Attendance**, those days show **S**; click to change them to **P** or **A** after the class and press **Save**.
    Amber S = class day passed but not marked yet.
@@ -156,16 +155,18 @@ Restore a backup with the same `psql` command and the backup file. The script's 
 read (monthly sheets are matched to students by first name; October-style "scheduled" billing is converted to the
 app's classes-held rule). `backups/` is git-ignored because dumps contain personal data.
 
-**Running the E2E suite writes test students, groups and fees into whatever database the stack uses** (they are
-deactivated afterwards, not deleted). With real data loaded, back up first and restore afterwards:
+**UI tests that create data write it into whatever database the stack uses.** With real data loaded, back up first
+and restore afterwards:
 
 ```bash
-docker compose exec -T postgres sh -c 'pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" --clean --if-exists' > backups/before-e2e.sql
-docker compose -f docker-compose.yml -f docker-compose.e2e.yml up -d backend && (cd e2e && npx playwright test)
+docker compose exec -T postgres sh -c 'pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" --clean --if-exists' > backups/before-tests.sql
+docker compose -f docker-compose.yml -f docker-compose.e2e.yml up -d backend && (cd playwright-agents && npx playwright test)
 docker compose stop backend
-docker compose exec -T postgres sh -c 'psql -v ON_ERROR_STOP=1 -q -U "$POSTGRES_USER" -d "$POSTGRES_DB"' < backups/before-e2e.sql
+docker compose exec -T postgres sh -c 'psql -v ON_ERROR_STOP=1 -q -U "$POSTGRES_USER" -d "$POSTGRES_DB"' < backups/before-tests.sql
 docker compose up -d backend
 ```
+
+The current login tests are read-only and do not need this.
 
 ## Configuration notes
 

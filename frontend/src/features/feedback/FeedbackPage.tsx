@@ -23,7 +23,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { useChat } from '@/features/chat/ChatContext'
 import { useMonthParam } from '@/hooks/useMonthParam'
 import { useClassGroups } from '@/hooks/useReferenceData'
-import { formatMonth, shiftMonth } from '@/lib/dates'
+import { formatMonth, isPastMonth, shiftMonth } from '@/lib/dates'
 import { applyServerErrors, errorMessage } from '@/lib/errors'
 import type { FeedbackRow } from '@/types'
 
@@ -119,6 +119,7 @@ const clip = (s: string | null) => (s ? <span className="line-clamp-2 whitespace
 
 function FeedbackDrawer({ row, month, onClose }: { row: FeedbackRow | null; month: string; onClose: () => void }) {
   const queryClient = useQueryClient()
+  const locked = isPastMonth(month)
   const { register, handleSubmit, reset, setValue, getValues, setError, formState } = useForm<Values>({ resolver: zodResolver(schema) })
 
   useEffect(() => {
@@ -144,10 +145,12 @@ function FeedbackDrawer({ row, month, onClose }: { row: FeedbackRow | null; mont
       <SheetContent data-testid="feedback-drawer">
         <SheetHeader>
           <SheetTitle>{row?.studentCode} {row?.fullName}</SheetTitle>
-          <SheetDescription>Feedback for {formatMonth(month)}</SheetDescription>
+          <SheetDescription>
+            Feedback for {formatMonth(month)}{locked && ' — past month, view only'}
+          </SheetDescription>
         </SheetHeader>
         <form id="feedback-form" className="flex flex-1 flex-col gap-4" noValidate onSubmit={handleSubmit((v) => save.mutate(v))}>
-          {row && (
+          {row && !locked && (
             <AiDraft
               studentId={row.studentId}
               month={month}
@@ -160,9 +163,9 @@ function FeedbackDrawer({ row, month, onClose }: { row: FeedbackRow | null; mont
             />
           )}
           <FormField id="topicsTaught" label="Topics taught" required error={formState.errors.topicsTaught?.message}>
-            <Textarea id="topicsTaught" rows={5} {...register('topicsTaught')} data-testid="feedback-topics" />
+            <Textarea id="topicsTaught" rows={5} readOnly={locked} {...register('topicsTaught')} data-testid="feedback-topics" />
           </FormField>
-          {row?.previousMonthTopics && (
+          {row?.previousMonthTopics && !locked && (
             <Button
               type="button"
               variant="outline"
@@ -175,17 +178,19 @@ function FeedbackDrawer({ row, month, onClose }: { row: FeedbackRow | null; mont
             </Button>
           )}
           <FormField id="improvementAreas" label="Improvement areas" error={formState.errors.improvementAreas?.message}>
-            <Textarea id="improvementAreas" rows={4} {...register('improvementAreas')} data-testid="feedback-improvement" />
+            <Textarea id="improvementAreas" rows={4} readOnly={locked} {...register('improvementAreas')} data-testid="feedback-improvement" />
           </FormField>
           <FormField id="achievements" label="Achievements" error={formState.errors.achievements?.message}>
-            <Textarea id="achievements" rows={4} {...register('achievements')} data-testid="feedback-achievements" />
+            <Textarea id="achievements" rows={4} readOnly={locked} {...register('achievements')} data-testid="feedback-achievements" />
           </FormField>
         </form>
         <SheetFooter>
-          <Button variant="outline" onClick={onClose}>Cancel</Button>
-          <Button type="submit" form="feedback-form" disabled={save.isPending} data-testid="feedback-save">
-            {save.isPending && <Loader2 className="animate-spin" />} Save feedback
-          </Button>
+          <Button variant="outline" onClick={onClose}>{locked ? 'Close' : 'Cancel'}</Button>
+          {!locked && (
+            <Button type="submit" form="feedback-form" disabled={save.isPending} data-testid="feedback-save">
+              {save.isPending && <Loader2 className="animate-spin" />} Save feedback
+            </Button>
+          )}
         </SheetFooter>
       </SheetContent>
     </Sheet>
@@ -194,6 +199,7 @@ function FeedbackDrawer({ row, month, onClose }: { row: FeedbackRow | null; mont
 
 export function FeedbackPage() {
   const [month] = useMonthParam()
+  const locked = isPastMonth(month)
   const [groupId, setGroupId] = useState<number | ''>('')
   const [editing, setEditing] = useState<FeedbackRow | null>(null)
   const [deleting, setDeleting] = useState<FeedbackRow | null>(null)
@@ -263,14 +269,14 @@ export function FeedbackPage() {
         const r = row.original
         return (
           <div className="flex justify-end gap-1" onClick={(e) => e.stopPropagation()}>
-            <Button size="icon" variant="ghost" aria-label={`Edit feedback for ${r.fullName}`} onClick={() => setEditing(r)} data-testid={`edit-feedback-${r.studentCode}`}><Pencil /></Button>
+            {!locked && <Button size="icon" variant="ghost" aria-label={`Edit feedback for ${r.fullName}`} onClick={() => setEditing(r)} data-testid={`edit-feedback-${r.studentCode}`}><Pencil /></Button>}
             {r.id !== null && (
               <>
                 <Button size="icon" variant="ghost" aria-label={`Email feedback to ${r.guardianName}`} disabled={email.isPending} onClick={() => email.mutate(r)} data-testid={`email-feedback-${r.studentCode}`}><Mail /></Button>
                 <Button size="icon" variant="ghost" aria-label="Printable report" asChild>
                   <Link to={`/feedback/${r.studentId}/report?month=${month}`}><Printer /></Link>
                 </Button>
-                <Button size="icon" variant="ghost" aria-label={`Delete feedback for ${r.fullName}`} onClick={() => setDeleting(r)}><Trash2 /></Button>
+                {!locked && <Button size="icon" variant="ghost" aria-label={`Delete feedback for ${r.fullName}`} onClick={() => setDeleting(r)}><Trash2 /></Button>}
               </>
             )}
           </div>
@@ -283,19 +289,26 @@ export function FeedbackPage() {
     <div>
       <PageHeader
         title="Monthly Feedback"
-        description={`${formatMonth(month)}${missing ? ` — ${missing} student(s) still need feedback` : ''}`}
+        description={`${formatMonth(month)}${missing && !locked ? ` — ${missing} student(s) still need feedback` : ''}`}
         actions={
           <>
             <NativeSelect aria-label="Filter by class group" className="w-44" value={groupId} onChange={(e) => setGroupId(e.target.value ? Number(e.target.value) : '')}>
               <option value="">All groups</option>
               {groups.data?.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
             </NativeSelect>
-            <Button variant="outline" onClick={() => copyAll.mutate()} disabled={copyAll.isPending} data-testid="copy-all-topics">
-              <Copy /> Copy topics from previous month
-            </Button>
+            {!locked && (
+              <Button variant="outline" onClick={() => copyAll.mutate()} disabled={copyAll.isPending} data-testid="copy-all-topics">
+                <Copy /> Copy topics from previous month
+              </Button>
+            )}
           </>
         }
       />
+      {locked && (
+        <p className="mb-3 rounded-md border bg-muted px-3 py-2 text-sm text-muted-foreground" role="status" data-testid="month-locked">
+          {formatMonth(month)} is a past month, so its feedback is view only.
+        </p>
+      )}
       {q.isError ? (
         <ErrorState error={q.error} onRetry={() => q.refetch()} />
       ) : (

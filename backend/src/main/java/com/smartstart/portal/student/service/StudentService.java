@@ -63,6 +63,7 @@ public class StudentService {
     private final AttendanceRepository attendanceRepository;
     private final MonthlyFeeRepository feeRepository;
     private final MonthlyFeedbackRepository feedbackRepository;
+    private final BatchHistoryService batchHistory;
 
     @Transactional(readOnly = true)
     public PageResponse<StudentResponse> list(StudentFilter filter, Pageable pageable) {
@@ -88,6 +89,7 @@ public class StudentService {
         // Rule 1: codes come from a forward-only sequence, so they are never reused.
         student.setStudentCode(formatCode(repository.nextCodeValue()));
         Student saved = repository.save(student);
+        batchHistory.recordNew(saved);
         log.info("Created student {}", saved.getStudentCode());
         return mapper.toResponse(saved).withHasHistory(false);
     }
@@ -96,9 +98,14 @@ public class StudentService {
     public StudentResponse update(Long id, UpdateStudentRequest request) {
         Student student = require(id);
         GradeRate grade = gradeRateService.requireGrade(request.grade());
+        var previousGroup = student.getClassGroup();
         mapper.update(request, student);
         applyCommon(student, request, grade);
         student.setPerClassRate(Money.scale(request.perClassRate()));
+        if (!BatchHistoryService.sameGroup(previousGroup, student.getClassGroup())) {
+            // Only this month onwards moves; earlier months keep the old batch.
+            batchHistory.recordMove(student);
+        }
         return mapper.toResponse(student).withHasHistory(hasHistory(id));
     }
 

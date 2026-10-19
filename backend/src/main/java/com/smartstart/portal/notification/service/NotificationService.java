@@ -17,6 +17,9 @@ import com.smartstart.portal.notification.dto.NotificationDtos.BulkSendResult;
 import com.smartstart.portal.notification.dto.NotificationDtos.ChannelStatusResponse;
 import com.smartstart.portal.notification.dto.NotificationDtos.ComposeAction;
 import com.smartstart.portal.notification.dto.NotificationDtos.ComposeFields;
+import com.smartstart.portal.notification.dto.NotificationDtos.MessagePreview;
+import com.smartstart.portal.notification.dto.NotificationDtos.MessageToSend;
+import com.smartstart.portal.notification.dto.NotificationDtos.OutgoingMessage;
 import com.smartstart.portal.notification.dto.NotificationDtos.NotificationResponse;
 import com.smartstart.portal.notification.dto.NotificationDtos.PreviewRequest;
 import com.smartstart.portal.notification.dto.NotificationDtos.PreviewResponse;
@@ -61,6 +64,7 @@ import java.util.LinkedHashMap;
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
@@ -326,11 +330,17 @@ public class NotificationService {
     }
 
     /**
-     * The month's class dates per batch from the class calendar: one email per batch to the parents of its active
-     * students and/or one SMS per batch to opted-in parents. {@code groupIds} empty means every batch with classes.
+     * The month's class dates per batch from the class calendar: one email per student to the parent and/or one SMS
+     * to opted-in parents. {@code groupIds} empty means every batch with classes.
      */
     @Transactional
     public BulkSendResult monthlySchedule(YearMonth month, List<Long> groupIds, Set<NotificationChannel> channels) {
+        return sendAll(monthlyScheduleDrafts(month, groupIds, channels).messages());
+    }
+
+    /** The schedule messages {@link #monthlySchedule} would send, for the admin to review first. */
+    @Transactional(readOnly = true)
+    public MessagePreview monthlyScheduleDrafts(YearMonth month, List<Long> groupIds, Set<NotificationChannel> channels) {
         Set<NotificationChannel> wanted = channels == null || channels.isEmpty() ? EnumSet.of(NotificationChannel.EMAIL) : channels;
         if (wanted.contains(NotificationChannel.SMS) && !sms.isConfigured()) {
             throw new BadRequestException("SMS_NOT_CONFIGURED", "SMS is not set up (see SMS settings in .env)", "channels");
@@ -347,21 +357,18 @@ public class NotificationService {
         NotificationTemplate smsTemplate = templateRepository.findByNameIgnoreCase(BuiltInTemplates.MONTHLY_SCHEDULE_SMS.templateName()).orElse(null);
 
         // One message per student so {{studentName}} / {{guardianName}} are filled in for each family.
-        List<Notification> created = new ArrayList<>();
+        MessagePreview out = new MessagePreview(new ArrayList<>(), new ArrayList<>());
         for (Map.Entry<ClassGroup, List<ClassSession>> e : byGroup.entrySet()) {
             for (Student student : studentRepository.findActiveInGroups(List.of(e.getKey().getId()))) {
                 Map<String, String> ctx = contextFactory.forStudent(student, month);
                 ctx.put("className", e.getKey().getName());
                 ctx.put("scheduleTable", contextFactory.sessionTable(e.getValue(), false));
                 ctx.put("classDates", contextFactory.compactDates(e.getValue()));
-                created.addAll(sendToFamily(student, NotificationType.SCHEDULE, wanted, ctx, template, BuiltInTemplates.MONTHLY_SCHEDULE,
-                        smsTemplate, BuiltInTemplates.MONTHLY_SCHEDULE_SMS));
+                familyDrafts(out, student, e.getKey(), NotificationType.SCHEDULE, wanted, ctx, template, BuiltInTemplates.MONTHLY_SCHEDULE,
+                        smsTemplate, BuiltInTemplates.MONTHLY_SCHEDULE_SMS);
             }
         }
-        if (created.isEmpty()) {
-            throw new BadRequestException("NO_RECIPIENTS", noRecipientsMessage(wanted, byGroup.keySet()));
-        }
-        return result(created);
+        return requireRecipients(out, wanted, byGroup.keySet());
     }
 
     /**
@@ -376,22 +383,40 @@ public class NotificationService {
     /** Reminders for every class on {@code date} over the given channels (the automatic run uses the saved settings). */
     @Transactional
     public BulkSendResult classReminders(LocalDate date, Set<NotificationChannel> channels) {
-        List<Notification> created = new ArrayList<>();
-        for (ClassSession session : classSessions.sessionsOn(date)) {
-            created.addAll(remind(session, channels));
+        return sendAll(classReminderDrafts(date, channels).messages());
+    }
+
+    /** The reminders for every class on {@code date}, for the "Send today's reminders" review. */
+    @Transactional(readOnly = true)
+    public MessagePreview classReminderDrafts(LocalDate date) {
+        List<ClassSession> sessions = classSessions.sessionsOn(date);
+        if (sessions.isEmpty()) {
+            throw new BadRequestException("NO_CLASSES", "No classes are on the calendar for " + contextFactory.formatDate(date));
         }
-        return result(created);
+        MessagePreview out = classReminderDrafts(date, availableChannels());
+        return requireRecipients(out, availableChannels(), sessions.stream().map(ClassSession::getClassGroup).distinct().toList());
+    }
+
+    private MessagePreview classReminderDrafts(LocalDate date, Set<NotificationChannel> channels) {
+        MessagePreview out = new MessagePreview(new ArrayList<>(), new ArrayList<>());
+        for (ClassSession session : classSessions.sessionsOn(date)) {
+            remindDrafts(out, session, channels);
+        }
+        return out;
     }
 
     /** The "Send reminder now" button: email + SMS reminder for one class on the calendar. */
     @Transactional
     public BulkSendResult classReminder(Long sessionId) {
+        return sendAll(classReminderDrafts(sessionId).messages());
+    }
+
+    @Transactional(readOnly = true)
+    public MessagePreview classReminderDrafts(Long sessionId) {
         ClassSession session = classSessions.require(sessionId);
-        List<Notification> created = remind(session, availableChannels());
-        if (created.isEmpty()) {
-            throw new BadRequestException("NO_RECIPIENTS", noRecipientsMessage(availableChannels(), List.of(session.getClassGroup())));
-        }
-        return result(created);
+        MessagePreview out = new MessagePreview(new ArrayList<>(), new ArrayList<>());
+        remindDrafts(out, session, availableChannels());
+        return requireRecipients(out, availableChannels(), List.of(session.getClassGroup()));
     }
 
     /**
@@ -400,13 +425,18 @@ public class NotificationService {
      */
     @Transactional
     public BulkSendResult classChange(ClassChangeRequest r) {
+        return sendAll(classChangeDrafts(r).messages());
+    }
+
+    @Transactional(readOnly = true)
+    public MessagePreview classChangeDrafts(ClassChangeRequest r) {
         ClassGroup group = classGroupRepository.findById(r.classGroupId())
                 .orElseThrow(() -> new NotFoundException("Class group", r.classGroupId()));
         String change = contextFactory.describeChange(r);
         NotificationType type = r.kind() == ChangeKind.CANCELLED ? NotificationType.CLASS_CANCELLED : NotificationType.SCHEDULE_CHANGE;
         NotificationTemplate template = templateRepository.findByNameIgnoreCase(BuiltInTemplates.CLASS_CHANGE.templateName()).orElse(null);
         NotificationTemplate smsTemplate = templateRepository.findByNameIgnoreCase(BuiltInTemplates.CLASS_CHANGE_SMS.templateName()).orElse(null);
-        List<Notification> created = new ArrayList<>();
+        MessagePreview out = new MessagePreview(new ArrayList<>(), new ArrayList<>());
         for (Student student : studentRepository.findActiveInGroups(List.of(group.getId()))) {
             Map<String, String> ctx = contextFactory.forStudent(student, YearMonth.from(r.date()));
             ctx.put("className", group.getName());
@@ -414,11 +444,34 @@ public class NotificationService {
             ctx.put("time", r.startTime() + "–" + r.endTime());
             ctx.put("location", r.location() == null || r.location().isBlank() ? "the usual location" : r.location().strip());
             ctx.put("change", change);
-            created.addAll(sendToFamily(student, type, availableChannels(), ctx, template, BuiltInTemplates.CLASS_CHANGE,
-                    smsTemplate, BuiltInTemplates.CLASS_CHANGE_SMS));
+            familyDrafts(out, student, group, type, availableChannels(), ctx, template, BuiltInTemplates.CLASS_CHANGE,
+                    smsTemplate, BuiltInTemplates.CLASS_CHANGE_SMS);
         }
-        if (created.isEmpty()) {
-            throw new BadRequestException("NO_RECIPIENTS", noRecipientsMessage(availableChannels(), List.of(group)));
+        return requireRecipients(out, availableChannels(), List.of(group));
+    }
+
+    /**
+     * Sends messages the admin reviewed (some students unticked, text possibly edited). Recipients are looked up again
+     * from the student record, so only the parent on file can receive them.
+     */
+    @Transactional
+    public BulkSendResult sendReviewed(List<MessageToSend> messages) {
+        if (messages.stream().anyMatch(m -> m.channel() == NotificationChannel.SMS) && !sms.isConfigured()) {
+            throw new BadRequestException("SMS_NOT_CONFIGURED", "SMS is not set up (see SMS settings in .env)", "messages");
+        }
+        Map<Long, Student> students = studentRepository.findAllById(messages.stream().map(MessageToSend::studentId).distinct().toList())
+                .stream().collect(Collectors.toMap(Student::getId, Function.identity()));
+        List<Notification> created = new ArrayList<>();
+        for (MessageToSend m : messages) {
+            Student student = students.get(m.studentId());
+            if (student == null) {
+                throw new NotFoundException("Student", m.studentId());
+            }
+            String recipient = recipientFor(student, m.channel()).orElseThrow(() -> new BadRequestException("NO_RECIPIENTS",
+                    student.getFullName() + " has no " + (m.channel() == NotificationChannel.SMS ? "SMS opt-in" : "parent email") + " on file"));
+            NotificationTemplate template = m.templateId() == null ? null : templateRepository.findById(m.templateId()).orElse(null);
+            String subject = m.subject() == null || m.subject().isBlank() ? m.type().name() : m.subject().strip();
+            created.add(createAndSend(m.channel(), m.type(), template, subject, m.body().strip(), List.of(recipient)));
         }
         return result(created);
     }
@@ -428,11 +481,10 @@ public class NotificationService {
     }
 
     /** One reminder per active student in the class's batch: email to the parent, SMS if they opted in. */
-    private List<Notification> remind(ClassSession session, Set<NotificationChannel> channels) {
+    private void remindDrafts(MessagePreview out, ClassSession session, Set<NotificationChannel> channels) {
         ClassGroup group = session.getClassGroup();
         NotificationTemplate template = templateRepository.findByNameIgnoreCase(BuiltInTemplates.CLASS_REMINDER.templateName()).orElse(null);
         NotificationTemplate smsTemplate = templateRepository.findByNameIgnoreCase(BuiltInTemplates.CLASS_REMINDER_SMS.templateName()).orElse(null);
-        List<Notification> created = new ArrayList<>();
         for (Student student : studentRepository.findActiveInGroups(List.of(group.getId()))) {
             Map<String, String> ctx = contextFactory.forStudent(student, YearMonth.from(session.getClassDate()));
             ctx.put("className", group.getName());
@@ -440,26 +492,58 @@ public class NotificationService {
             ctx.put("time", session.getStartTime() + "–" + session.getEndTime());
             ctx.put("location", session.getLocation() == null ? "the usual location" : session.getLocation());
             ctx.put("scheduleTable", contextFactory.sessionTable(List.of(session), false));
-            created.addAll(sendToFamily(student, NotificationType.SCHEDULE, channels, ctx, template, BuiltInTemplates.CLASS_REMINDER,
-                    smsTemplate, BuiltInTemplates.CLASS_REMINDER_SMS));
+            familyDrafts(out, student, group, NotificationType.SCHEDULE, channels, ctx, template, BuiltInTemplates.CLASS_REMINDER,
+                    smsTemplate, BuiltInTemplates.CLASS_REMINDER_SMS);
         }
-        return created;
     }
 
-    /** Email to the student's parent (if on file) and SMS (if opted in with a valid number) for the wanted channels. */
-    private List<Notification> sendToFamily(Student student, NotificationType type, Set<NotificationChannel> channels, Map<String, String> ctx,
-                                            NotificationTemplate emailTemplate, BuiltInTemplates emailFallback,
-                                            NotificationTemplate smsTemplate, BuiltInTemplates smsFallback) {
+    /**
+     * Adds the student's email (if a parent email is on file) and SMS (if opted in with a valid number) for the wanted
+     * channels; a student with neither is listed in {@code skipped}.
+     */
+    private void familyDrafts(MessagePreview out, Student student, ClassGroup group, NotificationType type,
+                              Set<NotificationChannel> channels, Map<String, String> ctx,
+                              NotificationTemplate emailTemplate, BuiltInTemplates emailFallback,
+                              NotificationTemplate smsTemplate, BuiltInTemplates smsFallback) {
+        int before = out.messages().size();
+        for (NotificationChannel channel : List.of(NotificationChannel.EMAIL, NotificationChannel.SMS)) {
+            if (!channels.contains(channel)) {
+                continue;
+            }
+            NotificationTemplate template = channel == NotificationChannel.EMAIL ? emailTemplate : smsTemplate;
+            BuiltInTemplates fallback = channel == NotificationChannel.EMAIL ? emailFallback : smsFallback;
+            recipientFor(student, channel).ifPresent(to -> out.messages().add(new OutgoingMessage(
+                    student.getId(), student.getFullName(), group.getName(), channel, type,
+                    template == null ? null : template.getId(), to,
+                    truncate(renderer.render(template != null ? template.getSubject() : fallback.subject(), ctx), 200),
+                    renderer.render(template != null ? template.getBody() : fallback.body(), ctx))));
+        }
+        if (out.messages().size() == before) {
+            out.skipped().add(student.getFullName());
+        }
+    }
+
+    private Optional<String> recipientFor(Student student, NotificationChannel channel) {
+        if (channel == NotificationChannel.SMS) {
+            return RecipientResolver.smsNumber(student, sms.defaultCountryCode());
+        }
+        return student.getEmail() == null || student.getEmail().isBlank() ? Optional.empty() : Optional.of(student.getEmail().trim());
+    }
+
+    private MessagePreview requireRecipients(MessagePreview out, Set<NotificationChannel> channels, Collection<ClassGroup> groups) {
+        if (out.messages().isEmpty()) {
+            throw new BadRequestException("NO_RECIPIENTS", noRecipientsMessage(channels, groups));
+        }
+        return out;
+    }
+
+    private BulkSendResult sendAll(List<OutgoingMessage> messages) {
         List<Notification> created = new ArrayList<>();
-        if (channels.contains(NotificationChannel.EMAIL) && student.getEmail() != null && !student.getEmail().isBlank()) {
-            created.add(createAndSend(NotificationChannel.EMAIL, type, emailTemplate, emailFallback, ctx,
-                    List.of(student.getEmail().trim())));
+        for (OutgoingMessage m : messages) {
+            NotificationTemplate template = m.templateId() == null ? null : templateRepository.findById(m.templateId()).orElse(null);
+            created.add(createAndSend(m.channel(), m.type(), template, m.subject(), m.body(), List.of(m.recipient())));
         }
-        if (channels.contains(NotificationChannel.SMS)) {
-            RecipientResolver.smsNumber(student, sms.defaultCountryCode()).ifPresent(phone -> created.add(
-                    createAndSend(NotificationChannel.SMS, type, smsTemplate, smsFallback, ctx, List.of(phone))));
-        }
-        return created;
+        return result(created);
     }
 
     private static String noRecipientsMessage(Set<NotificationChannel> channels, Collection<ClassGroup> groups) {
@@ -609,6 +693,20 @@ public class NotificationService {
         n.setTemplate(template);
         n.setSubject(truncate(renderer.render(template != null ? template.getSubject() : fallback.subject(), ctx), 200));
         n.setBody(renderer.render(template != null ? template.getBody() : fallback.body(), ctx));
+        n.assignRecipients(recipients);
+        repository.saveAndFlush(n);
+        deliver(n);
+        return n;
+    }
+
+    private Notification createAndSend(NotificationChannel channel, NotificationType type, NotificationTemplate template,
+                                       String subject, String body, List<String> recipients) {
+        Notification n = new Notification();
+        n.setChannel(channel);
+        n.setType(type);
+        n.setTemplate(template);
+        n.setSubject(truncate(subject, 200));
+        n.setBody(body);
         n.assignRecipients(recipients);
         repository.saveAndFlush(n);
         deliver(n);

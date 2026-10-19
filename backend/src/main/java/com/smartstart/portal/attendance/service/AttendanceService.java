@@ -19,7 +19,9 @@ import com.smartstart.portal.common.exception.NotFoundException;
 import com.smartstart.portal.common.util.AppTime;
 import com.smartstart.portal.fee.service.FeeCalculator;
 import com.smartstart.portal.student.entity.Student;
+import com.smartstart.portal.classgroup.entity.ClassGroup;
 import com.smartstart.portal.student.repository.StudentRepository;
+import com.smartstart.portal.student.service.MonthRoster;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -47,6 +49,7 @@ public class AttendanceService {
     private final StudentRepository studentRepository;
     private final FeeCalculator calculator;
     private final ClassSessionService classSessions;
+    private final MonthRoster monthRoster;
     private final Clock clock;
 
     @Transactional(readOnly = true)
@@ -62,7 +65,9 @@ public class AttendanceService {
             days.add(new GridDay(d, date, AppTime.dayLetter(date.getDayOfWeek()), AppTime.isWeekend(date), date.isAfter(today)));
         }
 
-        List<Student> students = studentRepository.findActive(groupId);
+        // Students and batches as they were in that month, so later moves don't rewrite past months.
+        MonthRoster.Roster roster = monthRoster.forMonth(month, groupId);
+        List<Student> students = roster.students();
         Map<Long, Set<LocalDate>> classDays = classSessions.datesByGroup(month);
         Map<Long, AttendanceStatus[]> cellsByStudent = new HashMap<>();
         if (!students.isEmpty()) {
@@ -91,9 +96,9 @@ public class AttendanceService {
             totalPresent += present;
             totalAbsent += absent;
             rows.add(new GridRow(s.getId(), s.getStudentCode(), s.getFullName(),
-                    s.getClassGroup() == null ? null : s.getClassGroup().getName(),
+                    roster.groupName(s),
                     Collections.unmodifiableList(java.util.Arrays.asList(cells)),
-                    scheduledDays(s, month, classDays),
+                    scheduledDays(s, roster.groupOf(s), month, classDays),
                     present, absent, present + absent, calculator.attendancePct(present, present + absent)));
         }
 
@@ -200,8 +205,8 @@ public class AttendanceService {
     }
 
     /** Class-calendar days of the student's batch, from the enrollment date on (a new student owes nothing earlier). */
-    private static List<Boolean> scheduledDays(Student s, YearMonth month, Map<Long, Set<LocalDate>> classDays) {
-        Set<LocalDate> days = s.getClassGroup() == null ? Set.of() : classDays.getOrDefault(s.getClassGroup().getId(), Set.of());
+    private static List<Boolean> scheduledDays(Student s, ClassGroup group, YearMonth month, Map<Long, Set<LocalDate>> classDays) {
+        Set<LocalDate> days = group == null ? Set.of() : classDays.getOrDefault(group.getId(), Set.of());
         List<Boolean> out = new ArrayList<>(month.lengthOfMonth());
         for (int d = 1; d <= month.lengthOfMonth(); d++) {
             LocalDate date = month.atDay(d);

@@ -13,6 +13,11 @@ export function currentMonth(): MonthParam {
   return format(new Date(), 'yyyy-MM')
 }
 
+/** Months before the current one are closed: their schedule, feedback and fee bills can't be changed. */
+export function isPastMonth(month: MonthParam): boolean {
+  return month < currentMonth()
+}
+
 export function shiftMonth(month: MonthParam, delta: number): MonthParam {
   return format(addMonths(monthToDate(month), delta), 'yyyy-MM')
 }

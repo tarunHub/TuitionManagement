@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
-import { formatDate, formatMonth } from '@/lib/dates'
+import { formatDate, formatMonth, isPastMonth } from '@/lib/dates'
 import { formatMoney } from '@/lib/money'
 import type { FeeRow, Payment } from '@/types'
 import { methodLabel } from './PaymentDialog'
@@ -34,6 +34,7 @@ export function FeeDetailsDialog({ fee, open, onOpenChange, onEditPayment, onDel
   }, [fee, open])
 
   if (!fee) return null
+  const locked = isPastMonth(fee.month)
   const rateValid = rate !== '' && Number(rate) >= 0
 
   return (
@@ -79,23 +80,24 @@ export function FeeDetailsDialog({ fee, open, onOpenChange, onEditPayment, onDel
           <h3 className="text-sm font-semibold">Fee details</h3>
           <p className="text-xs text-muted-foreground">
             Amount due = {fee.classesScheduled ?? 0} classes scheduled on the Class Calendar × rate. Classes held ({fee.classesHeld}) come from attendance. The rate is a snapshot taken when the fee was generated.
+            {locked && ' This is a past month, so the rate and notes can no longer be changed.'}
           </p>
           <div className="grid gap-3 sm:grid-cols-2">
             <FormField id="fee-rate" label="Rate ($/class)" error={rateValid ? undefined : 'Must be ≥ 0'}>
-              <Input id="fee-rate" type="number" min="0" step="0.01" value={rate} onChange={(e) => setRate(e.target.value)} />
+              <Input id="fee-rate" type="number" min="0" step="0.01" value={rate} disabled={locked} onChange={(e) => setRate(e.target.value)} />
             </FormField>
             <FormField id="fee-notes" label="Notes">
-              <Input id="fee-notes" value={notes} onChange={(e) => setNotes(e.target.value)} />
+              <Input id="fee-notes" value={notes} disabled={locked} onChange={(e) => setNotes(e.target.value)} />
             </FormField>
           </div>
-          <div className="flex justify-end">
+          {!locked && <div className="flex justify-end">
             <Button
               disabled={savingFee || !rateValid}
               onClick={() => onSaveFee({ notes: notes.trim() || null, rate: Number(rate) })}
             >
               Save fee details
             </Button>
-          </div>
+          </div>}
         </section>
       </DialogContent>
     </Dialog>

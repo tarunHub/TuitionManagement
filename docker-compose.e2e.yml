@@ -1,4 +1,4 @@
-# Overlay for the Playwright suite: routes all backend mail to MailHog, all SMS to a local sink and the "Ask"
+# Overlay for UI tests (playwright-agents/): routes all backend mail to MailHog, all SMS to a local sink and the "Ask"
 # assistant to a scripted fake Ollama, whatever .env says, so tests never send real email or texts, run
 # deterministically, and can assert on what was "sent".
 #   docker compose -f docker-compose.yml -f docker-compose.e2e.yml up -d backend
@@ -8,7 +8,7 @@ services:
     image: node:22-alpine
     command: ["node", "/app/server.mjs"]
     volumes:
-      - ./e2e/sms-sink:/app:ro
+      - ./playwright-agents/stubs/sms-sink:/app:ro
     ports:
       - "8090:8080"   # GET http://localhost:8090/messages
 
@@ -16,7 +16,7 @@ services:
     image: node:22-alpine
     command: ["node", "/app/server.mjs"]
     volumes:
-      - ./e2e/fake-ollama:/app:ro
+      - ./playwright-agents/stubs/fake-ollama:/app:ro
 
   backend:
     environment:

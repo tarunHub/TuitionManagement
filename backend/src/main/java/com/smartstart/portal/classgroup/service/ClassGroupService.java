@@ -10,6 +10,7 @@ import com.smartstart.portal.common.exception.BadRequestException;
 import com.smartstart.portal.common.exception.ConflictException;
 import com.smartstart.portal.common.exception.NotFoundException;
 import com.smartstart.portal.schedule.repository.ScheduleSlotRepository;
+import com.smartstart.portal.student.repository.StudentBatchHistoryRepository;
 import com.smartstart.portal.student.repository.StudentRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Sort;
@@ -26,6 +27,7 @@ public class ClassGroupService {
     private final ClassGroupRepository repository;
     private final StudentRepository studentRepository;
     private final ScheduleSlotRepository slotRepository;
+    private final StudentBatchHistoryRepository batchHistoryRepository;
     private final ClassGroupMapper mapper;
 
     @Transactional(readOnly = true)
@@ -67,6 +69,10 @@ public class ClassGroupService {
         if (students > 0 || slots > 0) {
             throw new ConflictException("GROUP_IN_USE", "Class group '" + entity.getName() + "' is used by "
                     + students + " student(s) and " + slots + " schedule slot(s) and cannot be deleted");
+        }
+        if (batchHistoryRepository.countByClassGroupId(id) > 0) {
+            throw new ConflictException("GROUP_IN_USE", "Class group '" + entity.getName()
+                    + "' is part of past months' records and cannot be deleted");
         }
         repository.delete(entity);
     }

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { ReviewMessagesDialog, type ReviewRequest } from './ReviewMessagesDialog'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
@@ -8,7 +9,6 @@ import { Bell, Loader2, Plus, Repeat, Send, Settings2, Trash2 } from 'lucide-rea
 import { toast } from 'sonner'
 import { classCalendarApi } from '@/api/classCalendarApi'
 import { notificationsApi } from '@/api/notificationsApi'
-import { ConfirmDialog } from '@/components/ConfirmDialog'
 import { FormField } from '@/components/FormField'
 import { PageHeader } from '@/components/PageHeader'
 import { ErrorState, TableSkeleton } from '@/components/States'
@@ -18,10 +18,10 @@ import { Input } from '@/components/ui/input'
 import { NativeSelect } from '@/components/ui/native-select'
 import { useMonthParam } from '@/hooks/useMonthParam'
 import { useClassGroups } from '@/hooks/useReferenceData'
-import { formatDate, formatMonth, monthToDate, todayIso } from '@/lib/dates'
+import { formatDate, formatMonth, monthToDate, isPastMonth, todayIso } from '@/lib/dates'
 import { applyServerErrors, errorMessage } from '@/lib/errors'
 import { cn } from '@/lib/utils'
-import type { BulkSendResult, ClassChangeInput, ClassSession, ReminderSettings, Weekday } from '@/types'
+import type { ClassChangeInput, ClassSession, ReminderSettings, Weekday } from '@/types'
 
 const WEEKDAYS: { value: Weekday; short: string }[] = [
   { value: 'MONDAY', short: 'Mon' },
@@ -67,16 +67,6 @@ const repeatSchema = z
   .refine((v) => v.endTime > v.startTime, { path: ['endTime'], message: 'Must be after the start time' })
 type RepeatValues = z.infer<typeof repeatSchema>
 
-/** "2 sent (1 email, 1 SMS), 1 failed" style summary for the bulk send endpoints. */
-function reportSend(r: BulkSendResult, what: string) {
-  const emails = r.notifications.filter((n) => n.channel !== 'SMS').length
-  const texts = r.notifications.length - emails
-  const parts = [emails && `${emails} email${emails === 1 ? '' : 's'}`, texts && `${texts} SMS`].filter(Boolean).join(' + ')
-  if (r.created === 0) toast.info(`No ${what} to send`)
-  else if (r.failed) toast.warning(`${what}: ${r.sent} sent, ${r.failed} failed (${parts}) — see Notifications to retry`)
-  else toast.success(`${what} sent: ${parts}`)
-}
-
 function useInvalidate() {
   const queryClient = useQueryClient()
   return () => {
@@ -86,13 +76,14 @@ function useInvalidate() {
 }
 
 /** Add or edit one class day. */
-function SessionDialog({ open, onOpenChange, session, defaults, onChanged }: {
+function SessionDialog({ open, onOpenChange, session, defaults, onChanged, onReview }: {
   open: boolean
   onOpenChange: (o: boolean) => void
   session: ClassSession | null
   defaults: { date: string; classGroupId: number | '' ; startTime: string; endTime: string }
   /** After a save or removal: the page asks whether to tell parents. */
   onChanged: (change: ClassChangeInput) => void
+  onReview: (r: ReviewRequest) => void
 }) {
   const groups = useClassGroups()
   const invalidate = useInvalidate()
@@ -146,15 +137,15 @@ function SessionDialog({ open, onOpenChange, session, defaults, onChanged }: {
     onError: (e) => toast.error(errorMessage(e)),
   })
 
-  const queryClient = useQueryClient()
-  const remind = useMutation({
-    mutationFn: () => classCalendarApi.remind(session!.id),
-    onSuccess: (r) => {
-      reportSend(r, 'Class reminder')
-      queryClient.invalidateQueries({ queryKey: ['notifications'] })
-    },
-    onError: (e) => toast.error(errorMessage(e)),
-  })
+  const reviewReminder = () => {
+    const s = session!
+    onReview({
+      title: `Reminder for ${s.classGroupName} on ${formatDate(s.date, 'EEE, MMM d')}`,
+      what: 'Class reminder',
+      load: () => classCalendarApi.previewRemind(s.id),
+    })
+    onOpenChange(false)
+  }
 
   const e = formState.errors
   return (
@@ -168,8 +159,8 @@ function SessionDialog({ open, onOpenChange, session, defaults, onChanged }: {
           <div className="flex flex-wrap items-center gap-2 rounded-md border bg-muted/40 px-3 py-2 text-sm">
             <Bell className="size-4 text-muted-foreground" aria-hidden />
             <span className="mr-auto text-muted-foreground">Automatic reminders follow Reminder settings.</span>
-            <Button type="button" size="sm" variant="outline" onClick={() => remind.mutate()} disabled={remind.isPending} data-testid="session-remind">
-              {remind.isPending ? <Loader2 className="animate-spin" /> : <Send />} Send reminder now
+            <Button type="button" size="sm" variant="outline" onClick={reviewReminder} data-testid="session-remind">
+              <Send /> Send reminder now
             </Button>
           </div>
         )}
@@ -372,13 +363,13 @@ function describeChange(c: ClassChangeInput, batchName: string) {
 }
 
 /** Send the month's class dates to parents by email and/or SMS, one message per batch. */
-function SendScheduleDialog({ open, onOpenChange, month, batches }: {
+function SendScheduleDialog({ open, onOpenChange, month, batches, onReview }: {
   open: boolean
   onOpenChange: (o: boolean) => void
+  onReview: (r: ReviewRequest) => void
   month: string
   batches: [number, { name: string; count: number }][]
 }) {
-  const queryClient = useQueryClient()
   const channels = useQuery({ queryKey: ['notification-channels'], queryFn: notificationsApi.channels, enabled: open })
   const [email, setEmail] = useState(true)
   const [sms, setSms] = useState(false)
@@ -389,15 +380,16 @@ function SendScheduleDialog({ open, onOpenChange, month, batches }: {
     }
   }, [open, channels.data?.sms])
 
-  const send = useMutation({
-    mutationFn: () => classCalendarApi.sendSchedule(month, batches.map(([id]) => id), [...(email ? ['EMAIL' as const] : []), ...(sms ? ['SMS' as const] : [])]),
-    onSuccess: (r) => {
-      reportSend(r, `${formatMonth(month)} schedule`)
-      queryClient.invalidateQueries({ queryKey: ['notifications'] })
-      onOpenChange(false)
-    },
-    onError: (e) => toast.error(errorMessage(e)),
-  })
+  const review = () => {
+    const ids = batches.map(([id]) => id)
+    const chosen = [...(email ? ['EMAIL' as const] : []), ...(sms ? ['SMS' as const] : [])]
+    onReview({
+      title: `${formatMonth(month)} schedule`,
+      what: `${formatMonth(month)} schedule`,
+      load: () => classCalendarApi.previewSchedule(month, ids, chosen),
+    })
+    onOpenChange(false)
+  }
 
   const smsReady = !!channels.data?.sms
   return (
@@ -423,8 +415,8 @@ function SendScheduleDialog({ open, onOpenChange, month, batches }: {
         </fieldset>
         <DialogFooter>
           <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
-          <Button onClick={() => send.mutate()} disabled={send.isPending || (!email && !sms)} data-testid="send-schedule-confirm">
-            {send.isPending ? <Loader2 className="animate-spin" /> : <Send />} Send
+          <Button onClick={review} disabled={!email && !sms} data-testid="send-schedule-confirm">
+            Review messages
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -434,31 +426,27 @@ function SendScheduleDialog({ open, onOpenChange, month, batches }: {
 
 export function ClassCalendarPage() {
   const [month] = useMonthParam()
+  const locked = isPastMonth(month)
   const [groupId, setGroupId] = useState<number | ''>('')
   const groups = useClassGroups()
-  const queryClient = useQueryClient()
   const q = useQuery({ queryKey: ['class-calendar', month, groupId], queryFn: () => classCalendarApi.list(month, groupId) })
 
   const [editing, setEditing] = useState<{ session: ClassSession | null; date: string } | null>(null)
   const [repeatOpen, setRepeatOpen] = useState(false)
   const [emailOpen, setEmailOpen] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
-  const [pendingChange, setPendingChange] = useState<ClassChangeInput | null>(null)
+  const [review, setReview] = useState<ReviewRequest | null>(null)
   const reminders = useQuery({ queryKey: ['reminder-settings'], queryFn: classCalendarApi.reminderSettings })
 
-  const notify = useMutation({
-    mutationFn: (c: ClassChangeInput) => classCalendarApi.notifyChange(c),
-    onSuccess: (r) => {
-      reportSend(r, 'Class update')
-      setPendingChange(null)
-      queryClient.invalidateQueries({ queryKey: ['notifications'] })
-    },
-    onError: (e) => toast.error(errorMessage(e)),
-  })
   // Changes to classes that are already over aren't worth a message.
   const offerNotice = (c: ClassChangeInput) => {
     if (c.date < todayIso() && (!c.previousDate || c.previousDate < todayIso())) return
-    setPendingChange(c)
+    setReview({
+      title: 'Let parents know?',
+      description: describeChange(c, groups.data?.find((g) => g.id === c.classGroupId)?.name ?? 'batch'),
+      what: 'Class update',
+      load: () => classCalendarApi.previewChange(c),
+    })
   }
 
   const colourOf = (id: number) => BATCH_COLOURS[Math.max(0, groups.data?.findIndex((g) => g.id === id) ?? 0) % BATCH_COLOURS.length]
@@ -487,13 +475,10 @@ export function ClassCalendarPage() {
     return [...m.entries()]
   }, [q.data])
 
-  const remindToday = useMutation({
-    mutationFn: classCalendarApi.remindToday,
-    onSuccess: (r) => {
-      reportSend(r, "Today's reminders")
-      queryClient.invalidateQueries({ queryKey: ['notifications'] })
-    },
-    onError: (e) => toast.error(errorMessage(e)),
+  const remindToday = () => setReview({
+    title: "Today's class reminders",
+    what: "Today's reminders",
+    load: classCalendarApi.previewRemindToday,
   })
 
   // The last class used for this batch is the most likely time for the next one.
@@ -516,17 +501,26 @@ export function ClassCalendarPage() {
               <option value="">All batches</option>
               {groups.data?.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
             </NativeSelect>
-            <Button variant="outline" onClick={() => setRepeatOpen(true)} data-testid="calendar-repeat"><Repeat /> Repeat weekly</Button>
-            <Button variant="outline" onClick={() => setEditing({ session: null, date: `${month}-01` })} data-testid="calendar-add"><Plus /> Add class</Button>
+            {!locked && (
+              <>
+                <Button variant="outline" onClick={() => setRepeatOpen(true)} data-testid="calendar-repeat"><Repeat /> Repeat weekly</Button>
+                <Button variant="outline" onClick={() => setEditing({ session: null, date: `${month}-01` })} data-testid="calendar-add"><Plus /> Add class</Button>
+              </>
+            )}
             <Button variant="outline" onClick={() => setSettingsOpen(true)} data-testid="calendar-reminder-settings"><Settings2 /> Reminder settings</Button>
-            <Button variant="outline" onClick={() => remindToday.mutate()} disabled={remindToday.isPending} data-testid="calendar-remind-today" title="Email + SMS reminder to parents of every batch with class today">
-              {remindToday.isPending ? <Loader2 className="animate-spin" /> : <Bell />} Send today's reminders
+            <Button variant="outline" onClick={remindToday} data-testid="calendar-remind-today" title="Review, then send the reminder to parents of every batch with class today">
+              <Bell /> Send today's reminders
             </Button>
             <Button onClick={() => setEmailOpen(true)} disabled={perBatch.length === 0} data-testid="calendar-send-schedule"><Send /> Send schedule to parents</Button>
           </>
         }
       />
 
+      {locked && (
+        <p className="mb-3 rounded-md border bg-muted px-3 py-2 text-sm text-muted-foreground" role="status" data-testid="month-locked">
+          {formatMonth(month)} is a past month, so its class schedule is view only.
+        </p>
+      )}
       {q.isLoading ? (
         <TableSkeleton rows={6} />
       ) : q.isError ? (
@@ -544,23 +538,23 @@ export function ClassCalendarPage() {
                 return (
                   <div
                     key={date}
-                    className={cn('group min-h-24 cursor-pointer border-b border-r p-1.5 text-left transition-colors hover:bg-primary/5 [&:nth-child(7n)]:border-r-0', date === today && 'bg-primary/5')}
-                    onClick={() => setEditing({ session: null, date })}
+                    className={cn('group min-h-24 border-b border-r p-1.5 text-left transition-colors [&:nth-child(7n)]:border-r-0', !locked && 'cursor-pointer hover:bg-primary/5', date === today && 'bg-primary/5')}
+                    onClick={locked ? undefined : () => setEditing({ session: null, date })}
                     data-testid={`calendar-day-${date}`}
                   >
                     <div className="mb-1 flex items-center justify-between">
                       <span className={cn('text-xs font-semibold', date === today && 'rounded-full bg-primary px-1.5 text-primary-foreground')}>{Number(date.slice(8))}</span>
-                      <Plus className="size-3.5 text-muted-foreground opacity-0 group-hover:opacity-100" aria-hidden />
+                      {!locked && <Plus className="size-3.5 text-muted-foreground opacity-0 group-hover:opacity-100" aria-hidden />}
                     </div>
                     <div className="space-y-1">
                       {sessions.map((s) => (
                         <button
                           key={s.id}
                           type="button"
-                          className={cn('block w-full truncate rounded border px-1.5 py-0.5 text-left text-[11px] font-medium leading-tight', colourOf(s.classGroupId))}
+                          className={cn('block w-full truncate rounded border px-1.5 py-0.5 text-left text-[11px] font-medium leading-tight', colourOf(s.classGroupId), locked && 'cursor-default')}
                           onClick={(e) => {
                             e.stopPropagation()
-                            setEditing({ session: s, date })
+                            if (!locked) setEditing({ session: s, date })
                           }}
                           title={`${s.classGroupName} ${s.startTime}–${s.endTime}${s.location ? ` · ${s.location}` : ''}${s.notes ? ` · ${s.notes}` : ''}`}
                           data-testid={`session-${s.classGroupName}-${date}`}
@@ -577,7 +571,7 @@ export function ClassCalendarPage() {
           </div>
           <p className="mt-3 text-sm text-muted-foreground" data-testid="calendar-summary">
             {perBatch.length === 0
-              ? 'No classes yet this month. Click a day to add one, or use Repeat weekly.'
+              ? (locked ? 'No classes were scheduled this month.' : 'No classes yet this month. Click a day to add one, or use Repeat weekly.')
               : perBatch.map(([, b]) => `${b.name}: ${b.count} class${b.count === 1 ? '' : 'es'}`).join(' · ')}
           </p>
           {reminders.data && (
@@ -589,24 +583,11 @@ export function ClassCalendarPage() {
         </>
       )}
 
-      <SessionDialog open={!!editing} onOpenChange={(o) => !o && setEditing(null)} session={editing?.session ?? null} defaults={defaults} onChanged={offerNotice} />
+      <SessionDialog open={!!editing} onOpenChange={(o) => !o && setEditing(null)} session={editing?.session ?? null} defaults={defaults} onChanged={offerNotice} onReview={setReview} />
       <ReminderSettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} current={reminders.data} />
-      <ConfirmDialog
-        open={!!pendingChange}
-        onOpenChange={(o) => !o && !notify.isPending && setPendingChange(null)}
-        title="Let parents know?"
-        description={pendingChange && (
-          <div className="space-y-2">
-            <p>{describeChange(pendingChange, groups.data?.find((g) => g.id === pendingChange.classGroupId)?.name ?? 'batch')}</p>
-            <p className="text-xs">Each family in the batch gets an email, plus an SMS if they opted in to texts (Class Change templates).</p>
-          </div>
-        )}
-        confirmLabel="Send notification"
-        pending={notify.isPending}
-        onConfirm={() => pendingChange && notify.mutate(pendingChange)}
-      />
+      <ReviewMessagesDialog request={review} onClose={() => setReview(null)} />
       <RepeatDialog open={repeatOpen} onOpenChange={setRepeatOpen} month={month} groupId={groupId} />
-      <SendScheduleDialog open={emailOpen} onOpenChange={setEmailOpen} month={month} batches={perBatch} />
+      <SendScheduleDialog open={emailOpen} onOpenChange={setEmailOpen} month={month} batches={perBatch} onReview={setReview} />
     </div>
   )
 }

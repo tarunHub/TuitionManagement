@@ -31,6 +31,9 @@ public interface MonthlyFeeRepository extends JpaRepository<MonthlyFee, Long> {
 
     List<MonthlyFee> findByStudentIdOrderByFeeMonthDesc(Long studentId);
 
+    @Query("select f.student.id from MonthlyFee f where f.feeMonth = :month")
+    List<Long> findStudentIdsForMonth(@Param("month") LocalDate month);
+
     @Query("select f.feeMonth, sum(f.amountDue) from MonthlyFee f where f.feeMonth between :from and :to group by f.feeMonth")
     List<Object[]> sumDueByMonth(@Param("from") LocalDate from, @Param("to") LocalDate to);
 

@@ -10,7 +10,9 @@ import com.smartstart.portal.feedback.mapper.FeedbackMapper;
 import com.smartstart.portal.feedback.repository.MonthlyFeedbackRepository;
 import com.smartstart.portal.student.entity.Student;
 import com.smartstart.portal.student.repository.StudentRepository;
+import com.smartstart.portal.student.service.MonthRoster;
 import com.smartstart.portal.student.service.StudentService;
+import com.smartstart.portal.common.util.MonthLock;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -30,11 +32,17 @@ public class FeedbackService {
     private final StudentRepository studentRepository;
     private final StudentService studentService;
     private final FeedbackMapper mapper;
+    private final MonthRoster monthRoster;
+    private final MonthLock monthLock;
 
-    /** All active students for the month, with empty fields where feedback has not been entered. */
+    /**
+     * Students for the month, with empty fields where feedback has not been entered. Past months also list
+     * students deactivated since, and show each student in the batch they had that month.
+     */
     @Transactional(readOnly = true)
     public List<FeedbackRowResponse> list(YearMonth month, Long groupId) {
-        List<Student> students = studentRepository.findActive(groupId);
+        MonthRoster.Roster roster = monthRoster.forMonth(month, groupId);
+        List<Student> students = roster.students();
         if (students.isEmpty()) {
             return List.of();
         }
@@ -51,7 +59,7 @@ public class FeedbackService {
                     s.getStudentCode(),
                     s.getFullName(),
                     s.getGrade(),
-                    s.getClassGroup() == null ? null : s.getClassGroup().getName(),
+                    roster.groupName(s),
                     s.getGuardianName(),
                     f == null ? null : f.getTopicsTaught(),
                     f == null ? null : f.getImprovementAreas(),
@@ -64,6 +72,7 @@ public class FeedbackService {
     /** Rule 8: one record per student per month, so PUT is an upsert. */
     @Transactional
     public FeedbackResponse upsert(Long studentId, YearMonth month, UpsertFeedbackRequest request) {
+        monthLock.requireOpen(month, "feedback");
         Student student = studentService.require(studentId);
         LocalDate first = month.atDay(1);
         MonthlyFeedback feedback = repository.findByStudentIdAndFeedbackMonth(studentId, first).orElseGet(() -> {
@@ -81,12 +90,14 @@ public class FeedbackService {
     @Transactional
     public void delete(Long id) {
         MonthlyFeedback feedback = repository.findById(id).orElseThrow(() -> new NotFoundException("Feedback", id));
+        monthLock.requireOpen(feedback.getFeedbackMonth(), "feedback");
         repository.delete(feedback);
     }
 
     /** Fills topics for active students without feedback this month from their previous month's topics. */
     @Transactional
     public CopyTopicsResult copyTopicsFromPreviousMonth(YearMonth month) {
+        monthLock.requireOpen(month, "feedback");
         List<Student> students = studentRepository.findAllActive();
         if (students.isEmpty()) {
             return new CopyTopicsResult(0);

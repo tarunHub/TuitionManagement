@@ -43,4 +43,7 @@ public interface AttendanceRepository extends JpaRepository<Attendance, Long> {
     List<StudentAttendanceCount> countByStudent(@Param("from") LocalDate from, @Param("to") LocalDate to);
 
     List<Attendance> findByStudentIdOrderByClassDateDesc(Long studentId);
+
+    @Query("select distinct a.student.id from Attendance a where a.classDate between :from and :to")
+    List<Long> findStudentIdsBetween(@Param("from") LocalDate from, @Param("to") LocalDate to);
 }

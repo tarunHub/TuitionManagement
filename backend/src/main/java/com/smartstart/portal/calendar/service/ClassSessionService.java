@@ -11,6 +11,7 @@ import com.smartstart.portal.classgroup.service.ClassGroupService;
 import com.smartstart.portal.common.exception.BadRequestException;
 import com.smartstart.portal.common.exception.ConflictException;
 import com.smartstart.portal.common.exception.NotFoundException;
+import com.smartstart.portal.common.util.MonthLock;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
@@ -34,6 +35,9 @@ public class ClassSessionService {
     private final ClassSessionRepository repository;
     private final ClassGroupService groups;
     private final ApplicationEventPublisher events;
+    private final MonthLock monthLock;
+
+    private static final String WHAT = "class schedule";
 
     @Transactional(readOnly = true)
     public List<SessionResponse> list(YearMonth month, Long groupId) {
@@ -64,6 +68,7 @@ public class ClassSessionService {
 
     @Transactional
     public SessionResponse create(SessionRequest request) {
+        monthLock.requireOpen(request.date(), WHAT);
         ClassGroup group = groups.require(request.classGroupId());
         checkTimes(request.startTime(), request.endTime());
         if (repository.existsByClassGroupIdAndClassDate(group.getId(), request.date())) {
@@ -80,6 +85,8 @@ public class ClassSessionService {
     @Transactional
     public SessionResponse update(Long id, SessionRequest request) {
         ClassSession s = require(id);
+        monthLock.requireOpen(s.getClassDate(), WHAT);
+        monthLock.requireOpen(request.date(), WHAT);
         ClassGroup group = groups.require(request.classGroupId());
         checkTimes(request.startTime(), request.endTime());
         if (repository.existsByClassGroupIdAndClassDateAndIdNot(group.getId(), request.date(), id)) {
@@ -97,6 +104,7 @@ public class ClassSessionService {
     @Transactional
     public void delete(Long id) {
         ClassSession s = require(id);
+        monthLock.requireOpen(s.getClassDate(), WHAT);
         repository.delete(s);
         repository.flush();
         changed(s.getClassDate());
@@ -107,6 +115,7 @@ public class ClassSessionService {
         ClassGroup group = groups.require(request.classGroupId());
         checkTimes(request.startTime(), request.endTime());
         YearMonth month = YearMonth.parse(request.month());
+        monthLock.requireOpen(month, WHAT);
         Set<LocalDate> taken = new HashSet<>();
         repository.findBetween(month.atDay(1), month.atEndOfMonth(), group.getId()).forEach(s -> taken.add(s.getClassDate()));
 

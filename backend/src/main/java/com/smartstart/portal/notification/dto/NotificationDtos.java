@@ -142,6 +142,28 @@ public final class NotificationDtos {
     public record ScheduleBroadcastRequest(Long templateId) {
     }
 
+    /** One email or SMS ready to go, shown to the admin to review (and edit) before sending. */
+    public record OutgoingMessage(Long studentId, String studentName, String className, NotificationChannel channel,
+                                  NotificationType type, Long templateId, String recipient, String subject, String body) {
+    }
+
+    /** {@code skipped} lists students with no parent email or SMS opt-in, who would get nothing. */
+    public record MessagePreview(List<OutgoingMessage> messages, List<String> skipped) {
+    }
+
+    public record MessageToSend(
+            @NotNull Long studentId,
+            @NotNull NotificationChannel channel,
+            @NotNull NotificationType type,
+            Long templateId,
+            @Size(max = 200) String subject,
+            @NotBlank @Size(max = 20000) String body
+    ) {
+    }
+
+    public record SendReviewedRequest(@NotEmpty @Size(max = 500) List<@Valid MessageToSend> messages) {
+    }
+
     public record BulkSendResult(int created, int sent, int failed, List<NotificationResponse> notifications) {
     }
 

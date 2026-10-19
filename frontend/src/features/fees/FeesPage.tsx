@@ -14,7 +14,7 @@ import { Button } from '@/components/ui/button'
 import { NativeSelect } from '@/components/ui/native-select'
 import { useMonthParam } from '@/hooks/useMonthParam'
 import { useClassGroups } from '@/hooks/useReferenceData'
-import { formatDate, formatMonth } from '@/lib/dates'
+import { formatDate, formatMonth, isPastMonth } from '@/lib/dates'
 import { errorMessage } from '@/lib/errors'
 import { formatMoney } from '@/lib/money'
 import type { FeeRow, FeeStatus, Payment, PaymentInput } from '@/types'
@@ -27,6 +27,7 @@ const nowrap = { className: 'whitespace-nowrap' }
 
 export function FeesPage() {
   const [month] = useMonthParam()
+  const locked = isPastMonth(month)
   const [status, setStatus] = useState<FeeStatus | ''>('')
   const [groupId, setGroupId] = useState<number | ''>('')
   const [selection, setSelection] = useState<RowSelectionState>({})
@@ -185,13 +186,20 @@ export function FeesPage() {
             <Button variant="outline" disabled={selected.length === 0 || remind.isPending} onClick={() => remind.mutate()} data-testid="send-reminders">
               {remind.isPending ? <Loader2 className="animate-spin" /> : <Mail />} Send fee reminder{selected.length ? ` (${selected.length})` : ''}
             </Button>
-            <Button onClick={() => generate.mutate()} disabled={generate.isPending} data-testid="generate-fees">
-              {generate.isPending ? <Loader2 className="animate-spin" /> : <RefreshCw />} Generate / Refresh fees
-            </Button>
+            {!locked && (
+              <Button onClick={() => generate.mutate()} disabled={generate.isPending} data-testid="generate-fees">
+                {generate.isPending ? <Loader2 className="animate-spin" /> : <RefreshCw />} Generate / Refresh fees
+              </Button>
+            )}
           </>
         }
       />
-      {q.data && q.data.activeStudentsWithoutFee > 0 && q.data.rows.length > 0 && (
+      {locked && (
+        <p className="mb-3 rounded-md border bg-muted px-3 py-2 text-sm text-muted-foreground" role="status" data-testid="month-locked">
+          {formatMonth(month)} is a past month, so its fees are final. You can still record payments.
+        </p>
+      )}
+      {!locked && q.data && q.data.activeStudentsWithoutFee > 0 && q.data.rows.length > 0 && (
         <p className="mb-3 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900" role="status">
           {q.data.activeStudentsWithoutFee} active student(s) have no fee for this month yet. Use “Generate / Refresh fees”.
         </p>
@@ -201,8 +209,10 @@ export function FeesPage() {
       ) : !q.isLoading && rows.length === 0 && !status && !groupId ? (
         <EmptyState
           title={`No fees for ${formatMonth(month)}`}
-          description="Generate fees to create one row per active student from this month's attendance. Re-running is safe and never removes payments."
-          action={<Button onClick={() => generate.mutate()} disabled={generate.isPending}><RefreshCw /> Generate fees</Button>}
+          description={locked
+            ? 'No fees were generated for this month.'
+            : "Generate fees to create one row per active student from this month's attendance. Re-running is safe and never removes payments."}
+          action={locked ? undefined : <Button onClick={() => generate.mutate()} disabled={generate.isPending}><RefreshCw /> Generate fees</Button>}
         />
       ) : (
         <DataTable

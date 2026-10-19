@@ -11,6 +11,8 @@ import com.smartstart.portal.calendar.dto.ClassCalendarDtos.SessionResponse;
 import com.smartstart.portal.calendar.service.ClassSessionService;
 import com.smartstart.portal.calendar.service.ReminderSettingsService;
 import com.smartstart.portal.notification.dto.NotificationDtos.BulkSendResult;
+import com.smartstart.portal.notification.dto.NotificationDtos.MessagePreview;
+import com.smartstart.portal.notification.dto.NotificationDtos.SendReviewedRequest;
 import com.smartstart.portal.notification.service.NotificationService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
@@ -108,5 +110,38 @@ public class ClassCalendarController {
     @PostMapping("/{id}/remind")
     public BulkSendResult remind(@PathVariable Long id) {
         return notifications.classReminder(id);
+    }
+
+    // Review before sending: each preview returns the exact messages (per student and channel) without sending
+    // anything; the admin unticks students or edits text, then posts what is left to /send-messages.
+
+    @Operation(summary = "Preview the monthly schedule messages without sending")
+    @PostMapping("/send-schedule/preview")
+    public MessagePreview previewSchedule(@Valid @RequestBody SendScheduleRequest request) {
+        return notifications.monthlyScheduleDrafts(YearMonth.parse(request.month()), request.classGroupIds(), request.channels());
+    }
+
+    @Operation(summary = "Preview a class change notice without sending")
+    @PostMapping("/notify-change/preview")
+    public MessagePreview previewChange(@Valid @RequestBody ClassChangeRequest request) {
+        return notifications.classChangeDrafts(request);
+    }
+
+    @Operation(summary = "Preview today's class reminders without sending")
+    @PostMapping("/remind-today/preview")
+    public MessagePreview previewRemindToday() {
+        return notifications.classReminderDrafts(LocalDate.now(clock));
+    }
+
+    @Operation(summary = "Preview the reminder for one class without sending")
+    @PostMapping("/{id}/remind/preview")
+    public MessagePreview previewRemind(@PathVariable Long id) {
+        return notifications.classReminderDrafts(id);
+    }
+
+    @Operation(summary = "Send reviewed messages (recipients are taken from each student's record)")
+    @PostMapping("/send-messages")
+    public BulkSendResult sendMessages(@Valid @RequestBody SendReviewedRequest request) {
+        return notifications.sendReviewed(request.messages());
     }
 }

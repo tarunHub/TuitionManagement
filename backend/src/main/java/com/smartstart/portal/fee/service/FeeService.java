@@ -5,7 +5,10 @@ import com.smartstart.portal.attendance.repository.AttendanceRepository;
 import com.smartstart.portal.calendar.service.ClassCalendarChanged;
 import com.smartstart.portal.common.exception.BadRequestException;
 import com.smartstart.portal.common.exception.NotFoundException;
+import com.smartstart.portal.classgroup.entity.ClassGroup;
 import com.smartstart.portal.common.util.Money;
+import com.smartstart.portal.common.util.MonthLock;
+import com.smartstart.portal.student.service.BatchHistoryService;
 import com.smartstart.portal.fee.dto.FeeDtos.CreatePaymentRequest;
 import com.smartstart.portal.fee.dto.FeeDtos.FeeListResponse;
 import com.smartstart.portal.fee.dto.FeeDtos.FeeRowResponse;
@@ -57,13 +60,20 @@ public class FeeService {
     private final FeeCalculator calculator;
     private final FeePaymentMapper paymentMapper;
     private final Clock clock;
+    private final BatchHistoryService batchHistory;
+    private final MonthLock monthLock;
+
+    private static final String WHAT = "fees";
 
     @Transactional(readOnly = true)
     public FeeListResponse list(YearMonth month, FeeStatus status, Long groupId) {
         List<MonthlyFee> fees = feeRepository.findByMonthWithStudent(month.atDay(1));
+        Map<Long, ClassGroup> groups = groupsFor(month, fees);
         List<MonthlyFee> inGroup = fees.stream()
-                .filter(f -> groupId == null || (f.getStudent().getClassGroup() != null
-                        && groupId.equals(f.getStudent().getClassGroup().getId())))
+                .filter(f -> {
+                    ClassGroup g = groups.get(f.getStudent().getId());
+                    return groupId == null || (g != null && groupId.equals(g.getId()));
+                })
                 .toList();
         List<FeeRowResponse> rows = toRows(inGroup).stream()
                 .filter(r -> status == null || r.status() == status)
@@ -80,6 +90,7 @@ public class FeeService {
      */
     @Transactional
     public GenerateFeesResponse generate(YearMonth month) {
+        monthLock.requireOpen(month, WHAT);
         LocalDate feeMonth = month.atDay(1);
         Map<Long, StudentAttendanceCount> counts = attendanceRepository.countByStudent(feeMonth, month.atEndOfMonth()).stream()
                 .collect(Collectors.toMap(StudentAttendanceCount::studentId, Function.identity()));
@@ -87,10 +98,13 @@ public class FeeService {
                 .collect(Collectors.toMap(f -> f.getStudent().getId(), Function.identity()));
         Map<Long, List<LocalDate>> classDates = scheduleCalendar.classDatesByGroup(month);
 
+        List<Student> active = studentRepository.findAllActive();
+        Map<Long, ClassGroup> groups = batchHistory.groupsIn(month, active);
+
         int created = 0;
         int updated = 0;
         List<MonthlyFee> toSave = new ArrayList<>();
-        for (Student student : studentRepository.findAllActive()) {
+        for (Student student : active) {
             MonthlyFee fee = existing.get(student.getId());
             if (fee == null && student.getEnrollmentDate() != null && student.getEnrollmentDate().isAfter(month.atEndOfMonth())) {
                 continue; // not enrolled yet in this month
@@ -100,7 +114,8 @@ public class FeeService {
                 fee.setStudent(student);
                 fee.setFeeMonth(feeMonth);
                 fee.setRate(Money.scale(student.getPerClassRate()));
-                fee.setNotes(student.getClassGroup() == null ? null : student.getClassGroup().getName());
+                ClassGroup group = groups.get(student.getId());
+                fee.setNotes(group == null ? null : group.getName());
                 created++;
             } else {
                 updated++;
@@ -108,7 +123,7 @@ public class FeeService {
             StudentAttendanceCount c = counts.get(student.getId());
             fee.setClassesHeld(c == null ? 0 : (int) c.held());
             if (fee.getId() == null || !classDates.isEmpty()) {
-                applySchedule(fee, classDates);
+                applySchedule(fee, groups.get(student.getId()), classDates);
             }
             toSave.add(fee);
         }
@@ -117,14 +132,21 @@ public class FeeService {
         return new GenerateFeesResponse(month.toString(), created, updated, list(month, null, null));
     }
 
-    /** Keeps existing fees in step with the class calendar when classes are added, moved or removed. */
+    /**
+     * Keeps existing fees in step with the class calendar when classes are added, moved or removed.
+     * Past months' bills are final and never recounted.
+     */
     @EventListener
     @Transactional
     public void onCalendarChanged(ClassCalendarChanged event) {
         for (YearMonth month : event.months()) {
+            if (monthLock.isPast(month)) {
+                continue;
+            }
             Map<Long, List<LocalDate>> classDates = scheduleCalendar.classDatesByGroup(month);
             List<MonthlyFee> fees = feeRepository.findByMonthWithStudent(month.atDay(1));
-            fees.forEach(f -> applySchedule(f, classDates));
+            Map<Long, ClassGroup> groups = groupsFor(month, fees);
+            fees.forEach(f -> applySchedule(f, groups.get(f.getStudent().getId()), classDates));
             log.info("Recounted classes scheduled for {} fee(s) in {}", fees.size(), month);
         }
     }
@@ -133,9 +155,9 @@ public class FeeService {
      * Scheduled = the batch's calendar days in the month on or after the enrollment date; due = scheduled × rate.
      * A month with no classes on the calendar at all (before the calendar was used) leaves existing fees alone.
      */
-    private void applySchedule(MonthlyFee fee, Map<Long, List<LocalDate>> classDates) {
+    private void applySchedule(MonthlyFee fee, ClassGroup group, Map<Long, List<LocalDate>> classDates) {
         Student s = fee.getStudent();
-        List<LocalDate> dates = s.getClassGroup() == null ? List.of() : classDates.getOrDefault(s.getClassGroup().getId(), List.of());
+        List<LocalDate> dates = group == null ? List.of() : classDates.getOrDefault(group.getId(), List.of());
         int scheduled = (int) dates.stream()
                 .filter(d -> s.getEnrollmentDate() == null || !d.isBefore(s.getEnrollmentDate()))
                 .count();
@@ -147,6 +169,7 @@ public class FeeService {
     @Transactional
     public FeeRowResponse update(Long feeId, UpdateMonthlyFeeRequest request) {
         MonthlyFee fee = requireFee(feeId);
+        monthLock.requireOpen(fee.getFeeMonth(), WHAT);
         fee.setNotes(request.notes() == null || request.notes().isBlank() ? null : request.notes().trim());
         if (request.rate() != null) {
             fee.setRate(Money.scale(request.rate()));
@@ -231,6 +254,10 @@ public class FeeService {
         payment.setReference(request.reference() == null || request.reference().isBlank() ? null : request.reference().trim());
     }
 
+    private Map<Long, ClassGroup> groupsFor(YearMonth month, List<MonthlyFee> fees) {
+        return batchHistory.groupsIn(month, fees.stream().map(MonthlyFee::getStudent).toList());
+    }
+
     private MonthlyFee requireFee(Long id) {
         return feeRepository.findWithStudent(id).orElseThrow(() -> new NotFoundException("Monthly fee", id));
     }
@@ -239,6 +266,10 @@ public class FeeService {
         if (fees.isEmpty()) {
             return List.of();
         }
+        // Each fee shows the batch the student was in during that fee's month.
+        Map<YearMonth, Map<Long, ClassGroup>> groupsByMonth = new HashMap<>();
+        fees.stream().collect(Collectors.groupingBy(f -> YearMonth.from(f.getFeeMonth())))
+                .forEach((m, list) -> groupsByMonth.put(m, groupsFor(m, list)));
         Map<Long, List<FeePayment>> payments = new HashMap<>();
         for (FeePayment p : paymentRepository.findByFeeIds(fees.stream().map(MonthlyFee::getId).toList())) {
             payments.computeIfAbsent(p.getMonthlyFee().getId(), k -> new ArrayList<>()).add(p);
@@ -251,6 +282,7 @@ public class FeeService {
                     .max(Comparator.comparing(FeePayment::getPaymentDate).thenComparing(FeePayment::getId))
                     .orElse(null);
             Student s = f.getStudent();
+            ClassGroup group = groupsByMonth.get(YearMonth.from(f.getFeeMonth())).get(s.getId());
             List<PaymentResponse> paymentResponses = ps.stream().map(paymentMapper::toResponse).toList();
             rows.add(new FeeRowResponse(
                     f.getId(),
@@ -259,7 +291,7 @@ public class FeeService {
                     s.getStudentCode(),
                     s.getFullName(),
                     s.getGrade(),
-                    s.getClassGroup() == null ? null : s.getClassGroup().getName(),
+                    group == null ? null : group.getName(),
                     s.getEmail(),
                     Money.scale(f.getRate()),
                     f.getClassesHeld(),

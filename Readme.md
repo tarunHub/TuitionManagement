@@ -110,7 +110,7 @@ student-portal/
 │       ├── routes/              # router + ProtectedRoute
 │       ├── types/               # shared TS types mirroring backend DTOs
 │       └── main.tsx
-├── e2e/                         # Playwright TypeScript tests
+├── playwright-agents/           # Playwright TypeScript tests (planner/generator/healer agents)
 ├── docker-compose.yml
 ├── .env.example
 └── README.md
@@ -386,7 +386,8 @@ Text messages are sent from the centre's own Android phone and mobile plan using
 - **Send schedule to parents:** choose **Email**, **SMS** or both. One message per batch (the shown batch, or every batch with classes): the email lists the month's dates, times, location and notes with the total (template **"Monthly Schedule"**, placeholders `{{className}}`, `{{month}}`, `{{scheduleTable}}`); the SMS is one line, e.g. "Batch1 classes in October 2026: Oct 1, 6, 8 at 17:00–18:00; Oct 24 at 10:00–11:30" (template **"Monthly Schedule SMS"**, placeholder `{{classDates}}`). Email goes to parents of active students with an email on file; SMS only to parents who opted in. Sent messages appear under Notifications with Retry on failure.
 - **Personalised:** schedule and reminder messages are sent one per student, so `{{studentName}}` and `{{guardianName}}` are filled in (siblings get one message each).
 - **Automatic reminders (Reminder settings on the page):** on/off, when (on the day of the class, the day before, or two days before), time of day, and email and/or SMS. Stored in the `reminder_settings` table (migration V6); the backend checks once a minute and sends once per day (if the app was off at the set time it catches up later that day). `JOB_CLASS_REMINDER_ENABLED=false` in `.env` is a master off switch. Templates: "Class Reminder" / "Class Reminder SMS". Manual sending: **Send reminder now** in a class's dialog and **Send today's reminders** on the page.
-- **Change notices (on confirmation):** after adding a single class, changing a class's date, time, location or batch, or removing a class, the page asks **"Let parents know?"**; only on **Send notification** does each family get an email (and SMS if opted in) from the **"Class Change"** / **"Class Change SMS"** templates with `{{change}}`, e.g. "The class on Mon, Oct 12 (17:00–18:00) has moved to Tue, Oct 13, 18:00–19:00." Changes to past classes and Repeat weekly don't prompt.
+- **Change notices (on confirmation):** after adding a single class, changing a class's date, time, location or batch, or removing a class, the page asks **"Let parents know?"** (in the review window below); only on **Send** does each family get an email (and SMS if opted in) from the **"Class Change"** / **"Class Change SMS"** templates with `{{change}}`, e.g. "The class on Mon, Oct 12 (17:00–18:00) has moved to Tue, Oct 13, 18:00–19:00." Changes to past classes and Repeat weekly don't prompt.
+- **Review before sending:** every manual send (Send schedule to parents, Send today's reminders, Send reminder now, change notices) first opens a review window listing each family's actual email and SMS. Untick students to leave them out, open a row to edit the subject or text, then **Send N messages**. Previews come from `POST …/preview` endpoints that send nothing; the kept messages go to `POST /class-calendar/send-messages`, which looks the recipient up again from the student record (email on file / SMS opt-in), so edits can't redirect a message. Automatic reminders still send without review.
 - Removing a class leaves any P/A already marked for that day (and its billing) untouched.
 - The Class Calendar replaces the old weekly **Schedule** page (removed from the menu; `/schedule` redirects here). Fees' "classes scheduled", the dashboard's upcoming classes, the `{{scheduleTable}}` placeholder in composed notifications and the assistant's schedule answers all come from this calendar.
 
@@ -465,6 +466,8 @@ Errors use a consistent shape (RFC 7807 style):
 | | `POST /class-calendar/remind-today` | Send today's class reminders now |
 | | `GET`/`PUT /class-calendar/reminder-settings` | `{ enabled, daysBefore (0–2), sendTime "HH:mm", sendEmail, sendSms }` (+ `lastRunDate`, `smsAvailable`) |
 | | `POST /class-calendar/notify-change` | Body `{ kind: ADDED\|CHANGED\|CANCELLED, classGroupId, date, startTime, endTime, location?, previousDate?, previousStartTime?, previousEndTime?, previousLocation? }` → bulk send result |
+| | `POST /class-calendar/send-schedule/preview`, `/notify-change/preview`, `/remind-today/preview`, `/{id}/remind/preview` | Same bodies as the send endpoints → `{ messages: [{ studentId, studentName, className, channel, type, templateId, recipient, subject, body }], skipped: [names] }`; nothing is sent |
+| | `POST /class-calendar/send-messages` | Body `{ messages: [{ studentId, channel, type, templateId?, subject, body }] }` → bulk send result (used after review) |
 | Assistant | `POST /chat` | Body `{ messages: [{ role: USER\|ASSISTANT, content }] }` (last = new question) → `{ answer, sources, grounded, toolsUsed, model, durationMs }` |
 | | `GET /chat/status` | `{ enabled, available, model, message }` |
 | | `POST /chat/feedback-draft` | Body `{ studentId, month, notes, topicsTaught, improvementAreas, achievements }` → suggested `{ topicsTaught, improvementAreas, achievements, model, durationMs }` (nothing saved) |
@@ -515,14 +518,14 @@ HTTP status codes: 200/201/204 on success; 400 validation; 401 unauthenticated; 
 
 ## 10. End-to-End Tests (Playwright, TypeScript)
 
-Located in `/e2e`, run against Docker Compose:
+Located in `/playwright-agents`, written with Playwright's test agents and run against Docker Compose (see its README). Login is covered; the rest is the target coverage:
 - Login success and failure; redirect to login when the token is missing.
 - Student CRUD: create, edit, deactivate, and delete-blocked-with-history.
 - Attendance: mark P/A for a month, save, reload, verify totals.
 - Fees: generate the month, record full/partial/over payments, verify status badges and the TOTAL row.
 - Dashboard: values match the fees and attendance data entered.
 - Notification: compose and send; verify delivery through the MailHog API.
-- Ask: against a scripted fake Ollama (`e2e/fake-ollama`) that requests real lookups, verify the answer carries the database's numbers, links to its source screen, and flags answers given without a lookup.
+- Ask: against a scripted fake Ollama (`playwright-agents/stubs/fake-ollama`) that requests real lookups, verify the answer carries the database's numbers, links to its source screen, and flags answers given without a lookup.
 - SMS: opt a parent in on the student form, compose and send an SMS, and verify the request through the `sms-sink` stand-in for the phone gateway; a parent who has not opted in is never texted.
 
 Use the API to seed and clean test data, and store authenticated state for reuse.
