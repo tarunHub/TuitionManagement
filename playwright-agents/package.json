@@ -1,0 +1,19 @@
+{
+  "name": "smartstart-playwright-agents",
+  "private": true,
+  "type": "module",
+  "description": "Playwright UI tests for the Smart Start portal, authored with Playwright's planner / generator / healer agents",
+  "scripts": {
+    "test": "playwright test",
+    "test:headed": "playwright test --headed",
+    "test:ui": "playwright test --ui",
+    "report": "playwright show-report",
+    "typecheck": "tsc --noEmit",
+    "test:pending": "PENDING=1 playwright test"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.64.0",
+    "@types/node": "^26.6.5",
+    "typescript": "^7.0.2"
+  }
+}
