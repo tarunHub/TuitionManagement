@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { keepPreviousData, useQuery } from '@tanstack/react-query'
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import type { ColumnDef, PaginationState, SortingState } from '@tanstack/react-table'
-import { Download, Plus } from 'lucide-react'
+import { Download, Pencil, Plus, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { studentsApi } from '@/api/studentsApi'
+import { ConfirmDialog } from '@/components/ConfirmDialog'
 import { DataTable } from '@/components/DataTable'
 import { PageHeader } from '@/components/PageHeader'
 import { ErrorState } from '@/components/States'
@@ -16,7 +17,7 @@ import { errorMessage } from '@/lib/errors'
 import { formatMoney } from '@/lib/money'
 import type { Student, StudentStatus } from '@/types'
 
-const columns: ColumnDef<Student>[] = [
+const buildColumns = (onEdit: (s: Student) => void, onDelete: (s: Student) => void): ColumnDef<Student>[] => [
   { accessorKey: 'studentCode', header: 'Student ID', enableHiding: false },
   {
     accessorKey: 'fullName',
@@ -35,6 +36,38 @@ const columns: ColumnDef<Student>[] = [
   { accessorKey: 'email', header: 'Email' },
   { accessorKey: 'perClassRate', header: 'Rate', cell: ({ getValue }) => formatMoney(getValue<number>()), meta: { className: 'text-right' } },
   { accessorKey: 'status', header: 'Status', cell: ({ getValue }) => <StudentStatusBadge status={getValue<StudentStatus>()} /> },
+  {
+    id: 'actions',
+    header: 'Actions',
+    enableSorting: false,
+    enableHiding: false,
+    cell: ({ row }) => (
+      <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-8 w-8"
+          aria-label={`Edit ${row.original.fullName}`}
+          title="Edit"
+          onClick={() => onEdit(row.original)}
+          data-testid={`edit-student-${row.original.studentCode}`}
+        >
+          <Pencil />
+        </Button>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-8 w-8 text-destructive hover:text-destructive"
+          aria-label={`Delete ${row.original.fullName}`}
+          title="Delete"
+          onClick={() => onDelete(row.original)}
+          data-testid={`delete-student-${row.original.studentCode}`}
+        >
+          <Trash2 />
+        </Button>
+      </div>
+    ),
+  },
 ]
 
 export function StudentsListPage() {
@@ -48,6 +81,38 @@ export function StudentsListPage() {
   const [sorting, setSorting] = useState<SortingState>([{ id: 'studentCode', desc: false }])
   const grades = useGradeRates()
   const groups = useClassGroups()
+  const queryClient = useQueryClient()
+  const [toDelete, setToDelete] = useState<Student | null>(null)
+
+  const columns = useMemo(
+    () => buildColumns((s) => navigate(`/students/${s.id}/edit`), setToDelete),
+    [navigate],
+  )
+
+  // The list response has no history flag, so load the full record to decide delete vs deactivate.
+  const deleteTarget = useQuery({
+    queryKey: ['student', toDelete?.id],
+    queryFn: () => studentsApi.get(toDelete!.id),
+    enabled: !!toDelete,
+  })
+  const hasHistory = !!deleteTarget.data?.hasHistory
+
+  const invalidate = (id: number) => {
+    queryClient.invalidateQueries({ queryKey: ['students'] })
+    queryClient.invalidateQueries({ queryKey: ['student', id] })
+    queryClient.invalidateQueries({ queryKey: ['dashboard'] })
+  }
+
+  const deleteMutation = useMutation({
+    mutationFn: (s: Student) =>
+      hasHistory ? studentsApi.setStatus(s.id, 'INACTIVE').then(() => 'deactivated') : studentsApi.remove(s.id).then(() => 'deleted'),
+    onSuccess: (result, s) => {
+      toast.success(`Student ${result}`)
+      setToDelete(null)
+      invalidate(s.id)
+    },
+    onError: (e) => toast.error(errorMessage(e)),
+  })
 
   useEffect(() => {
     const t = setTimeout(() => setDebounced(search), 300)
@@ -139,6 +204,40 @@ export function StudentsListPage() {
           }
         />
       )}
+      <ConfirmDialog
+        open={!!toDelete}
+        onOpenChange={(open) => !open && setToDelete(null)}
+        destructive
+        title={toDelete ? `${hasHistory ? 'Deactivate' : 'Delete'} ${toDelete.fullName}?` : ''}
+        description={
+          !toDelete ? null : deleteTarget.isLoading ? (
+            <p>Checking student records…</p>
+          ) : deleteTarget.isError ? (
+            <p>{errorMessage(deleteTarget.error)}</p>
+          ) : hasHistory ? (
+            toDelete.status === 'INACTIVE' ? (
+              <p data-testid="delete-explanation">
+                {toDelete.fullName} has attendance, fee or feedback history, so the record cannot be deleted. They are already inactive.
+              </p>
+            ) : (
+              <p data-testid="delete-explanation">
+                {toDelete.fullName} has attendance, fee or feedback history, so the record cannot be deleted. The student will be
+                <strong> deactivated</strong> instead: their history is kept, and they no longer appear in attendance, fees or
+                notifications. You can reactivate them later.
+              </p>
+            )
+          ) : (
+            <p data-testid="delete-explanation">
+              {toDelete.fullName} has no attendance, fee or feedback history, so the record will be <strong>permanently deleted</strong>.
+              Their student ID ({toDelete.studentCode}) will not be reused.
+            </p>
+          )
+        }
+        confirmLabel={hasHistory ? 'Deactivate' : 'Delete'}
+        pending={deleteMutation.isPending}
+        confirmDisabled={deleteTarget.isLoading || deleteTarget.isError || (hasHistory && toDelete?.status === 'INACTIVE')}
+        onConfirm={() => toDelete && deleteMutation.mutate(toDelete)}
+      />
     </div>
   )
 }

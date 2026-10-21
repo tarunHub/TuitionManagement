@@ -19,10 +19,11 @@ interface ConfirmDialogProps {
   confirmLabel?: string
   destructive?: boolean
   pending?: boolean
+  confirmDisabled?: boolean
   onConfirm: () => void
 }
 
-export function ConfirmDialog({ open, onOpenChange, title, description, confirmLabel = 'Confirm', destructive, pending, onConfirm }: ConfirmDialogProps) {
+export function ConfirmDialog({ open, onOpenChange, title, description, confirmLabel = 'Confirm', destructive, pending, confirmDisabled, onConfirm }: ConfirmDialogProps) {
   return (
     <AlertDialog open={open} onOpenChange={onOpenChange}>
       <AlertDialogContent data-testid="confirm-dialog">
@@ -34,7 +35,7 @@ export function ConfirmDialog({ open, onOpenChange, title, description, confirmL
         </AlertDialogHeader>
         <AlertDialogFooter>
           <AlertDialogCancel disabled={pending}>Cancel</AlertDialogCancel>
-          <Button variant={destructive ? 'destructive' : 'default'} disabled={pending} onClick={onConfirm} data-testid="confirm-button">
+          <Button variant={destructive ? 'destructive' : 'default'} disabled={pending || confirmDisabled} onClick={onConfirm} data-testid="confirm-button">
             {pending && <Loader2 className="animate-spin" />}
             {confirmLabel}
           </Button>
