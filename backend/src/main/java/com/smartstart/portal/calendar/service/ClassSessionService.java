@@ -1,5 +1,7 @@
 package com.smartstart.portal.calendar.service;
 
+import com.smartstart.portal.calendar.dto.ClassCalendarDtos.ClearRequest;
+import com.smartstart.portal.calendar.dto.ClassCalendarDtos.ClearResult;
 import com.smartstart.portal.calendar.dto.ClassCalendarDtos.RepeatWeeklyRequest;
 import com.smartstart.portal.calendar.dto.ClassCalendarDtos.RepeatWeeklyResult;
 import com.smartstart.portal.calendar.dto.ClassCalendarDtos.SessionRequest;
@@ -59,8 +61,14 @@ public class ClassSessionService {
     /** Batch id → days of the month that batch has class. */
     @Transactional(readOnly = true)
     public Map<Long, Set<LocalDate>> datesByGroup(YearMonth month) {
+        return datesByGroup(month.atDay(1), month.atEndOfMonth());
+    }
+
+    /** Batch id → class days between two dates (inclusive). */
+    @Transactional(readOnly = true)
+    public Map<Long, Set<LocalDate>> datesByGroup(LocalDate from, LocalDate to) {
         Map<Long, Set<LocalDate>> out = new HashMap<>();
-        for (ClassSession s : sessions(month, null)) {
+        for (ClassSession s : repository.findBetween(from, to, null)) {
             out.computeIfAbsent(s.getClassGroup().getId(), k -> new HashSet<>()).add(s.getClassDate());
         }
         return out;
@@ -108,6 +116,37 @@ public class ClassSessionService {
         repository.delete(s);
         repository.flush();
         changed(s.getClassDate());
+    }
+
+    /**
+     * Removes every class between two dates (inclusive), for one batch or all, optionally only on some weekdays.
+     * Attendance already marked is kept. Parents are not notified.
+     */
+    @Transactional
+    public ClearResult clear(ClearRequest request) {
+        LocalDate from = request.from();
+        LocalDate to = request.to();
+        if (to.isBefore(from)) {
+            throw new BadRequestException("VALIDATION_FAILED", "must be on or after the start date", "to");
+        }
+        if (from.plusYears(1).isBefore(to)) {
+            throw new BadRequestException("VALIDATION_FAILED", "can cover at most one year", "to");
+        }
+        monthLock.requireOpen(from, WHAT);
+        if (request.classGroupId() != null) {
+            groups.require(request.classGroupId());
+        }
+        List<ClassSession> doomed = repository.findBetween(from, to, request.classGroupId()).stream()
+                .filter(s -> request.weekdays() == null || request.weekdays().isEmpty()
+                        || request.weekdays().contains(s.getClassDate().getDayOfWeek()))
+                .toList();
+        if (doomed.isEmpty()) {
+            return new ClearResult(0);
+        }
+        repository.deleteAll(doomed);
+        repository.flush();
+        changed(doomed.stream().map(ClassSession::getClassDate).toArray(LocalDate[]::new));
+        return new ClearResult(doomed.size());
     }
 
     @Transactional

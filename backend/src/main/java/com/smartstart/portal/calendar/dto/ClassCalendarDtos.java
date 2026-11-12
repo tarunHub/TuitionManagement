@@ -56,6 +56,18 @@ public final class ClassCalendarDtos {
     public record RepeatWeeklyResult(int created, int skipped) {
     }
 
+    /** Remove classes in bulk: a date range, one batch or all (null), and optionally only some weekdays. */
+    public record ClearRequest(
+            @NotNull LocalDate from,
+            @NotNull LocalDate to,
+            Long classGroupId,
+            List<DayOfWeek> weekdays
+    ) {
+    }
+
+    public record ClearResult(int removed) {
+    }
+
     /**
      * Batches to send the month's schedule for (empty or null = every batch with classes) and how: EMAIL, SMS or
      * both (empty or null = EMAIL).

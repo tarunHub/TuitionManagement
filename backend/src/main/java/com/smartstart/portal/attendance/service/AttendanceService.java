@@ -109,7 +109,8 @@ public class AttendanceService {
     }
 
     /**
-     * Applies a batch of cell changes atomically. Rule 7: only ACTIVE students and never for future dates.
+     * Applies a batch of cell changes atomically. Rule 7: only ACTIVE students. A future date can be marked only
+     * when the student's batch has a class on the calendar that day (clearing a future mark is always allowed).
      */
     @Transactional
     public BulkUpdateResult bulkUpdate(List<AttendanceUpdate> updates) {
@@ -124,9 +125,6 @@ public class AttendanceService {
         // Last write wins for duplicate (student, date) pairs within one batch.
         Map<Key, AttendanceUpdate> byKey = new LinkedHashMap<>();
         for (AttendanceUpdate u : updates) {
-            if (u.date().isAfter(today)) {
-                throw new BadRequestException("FUTURE_DATE", "Attendance cannot be marked for a future date (" + u.date() + ")", "date");
-            }
             byKey.put(new Key(u.studentId(), u.date()), u);
         }
 
@@ -146,6 +144,23 @@ public class AttendanceService {
 
         LocalDate min = byKey.keySet().stream().map(Key::date).min(LocalDate::compareTo).orElseThrow();
         LocalDate max = byKey.keySet().stream().map(Key::date).max(LocalDate::compareTo).orElseThrow();
+        if (max.isAfter(today)) {
+            Map<Long, Set<LocalDate>> classDays = classSessions.datesByGroup(today.plusDays(1), max);
+            for (Map.Entry<Key, AttendanceUpdate> e : byKey.entrySet()) {
+                LocalDate date = e.getKey().date();
+                if (!date.isAfter(today) || e.getValue().status() == null) {
+                    continue;
+                }
+                Student s = students.get(e.getKey().studentId());
+                boolean scheduled = s.getClassGroup() != null
+                        && classDays.getOrDefault(s.getClassGroup().getId(), Set.of()).contains(date)
+                        && (s.getEnrollmentDate() == null || !date.isBefore(s.getEnrollmentDate()));
+                if (!scheduled) {
+                    throw new BadRequestException("FUTURE_DATE", "A future date can only be marked when "
+                            + s.getStudentCode() + " has a class on the calendar that day (" + date + ")", "date");
+                }
+            }
+        }
         Map<Key, Attendance> existing = repository.findForUpdate(studentIds, min, max).stream()
                 .collect(Collectors.toMap(a -> new Key(a.getStudent().getId(), a.getClassDate()), Function.identity()));
 

@@ -3,7 +3,7 @@ import { CheckCheck } from 'lucide-react'
 import { formatPercent } from '@/lib/money'
 import { cn } from '@/lib/utils'
 import type { AttendanceGrid as Grid } from '@/types'
-import { cellLabel, computeTotals, editKey, effectiveCell, isScheduled, nextStatus, type CellValue } from './gridLogic'
+import { cellLabel, computeTotals, editKey, effectiveCell, isEditable, isScheduled, nextStatus, type CellValue } from './gridLogic'
 
 interface Props {
   grid: Grid
@@ -11,7 +11,10 @@ interface Props {
   onChange: (changes: { studentId: number; date: string; value: CellValue }[]) => void
 }
 
-/** Spreadsheet-style monthly grid. Keyboard: arrows move, P/A set, Delete clears, Space/Enter cycles. */
+/**
+ * Spreadsheet-style monthly grid. Keyboard: arrows move, P/A set, Delete clears, Space/Enter cycles.
+ * Future days can be marked only where the student has a class on the calendar.
+ */
 export function AttendanceGrid({ grid, edits, onChange }: Props) {
   const [focus, setFocus] = useState<{ r: number; d: number }>({ r: 0, d: 0 })
   const cellRefs = useRef<Map<string, HTMLTableCellElement>>(new Map())
@@ -25,7 +28,7 @@ export function AttendanceGrid({ grid, edits, onChange }: Props) {
 
   const setCell = useCallback(
     (r: number, d: number, value: CellValue) => {
-      if (grid.days[d].future) return
+      if (!isEditable(grid, r, d)) return
       onChange([{ studentId: grid.rows[r].studentId, date: grid.days[d].date, value }])
     },
     [grid, onChange],
@@ -57,11 +60,14 @@ export function AttendanceGrid({ grid, edits, onChange }: Props) {
     if (handled) e.preventDefault()
   }
 
-  /** Marks the students scheduled that day; on a day with nothing on the class calendar, everyone. */
+  /**
+   * Marks the students scheduled that day; on a past day with nothing on the class calendar, everyone.
+   * A future day only ever marks the scheduled students.
+   */
   const markAllPresent = (d: number) => {
     const day = grid.days[d]
-    if (day.future) return
     const scheduled = grid.rows.filter((_, r) => isScheduled(grid, r, d))
+    if (day.future && scheduled.length === 0) return
     const rows = scheduled.length > 0 ? scheduled : grid.rows
     onChange(rows.map((row) => ({ studentId: row.studentId, date: day.date, value: 'PRESENT' as const })))
   }
@@ -94,7 +100,7 @@ export function AttendanceGrid({ grid, edits, onChange }: Props) {
                   className="mx-auto mt-0.5 flex rounded p-0.5 text-muted-foreground hover:bg-primary/10 hover:text-primary disabled:opacity-30"
                   title={`Mark all present on ${day.date}`}
                   aria-label={`Mark all present on ${day.date}`}
-                  disabled={day.future || grid.rows.length === 0}
+                  disabled={grid.rows.length === 0 || (day.future && !grid.rows.some((_, r) => isScheduled(grid, r, d)))}
                   onClick={() => markAllPresent(d)}
                   data-testid={`mark-all-${day.day}`}
                 >
@@ -117,6 +123,7 @@ export function AttendanceGrid({ grid, edits, onChange }: Props) {
                 const value = effectiveCell(grid, edits, r, d)
                 const scheduled = isScheduled(grid, r, d)
                 const toMark = scheduled && value === null && !day.future
+                const editable = isEditable(grid, r, d)
                 const dirty = edits.has(editKey(row.studentId, day.date))
                 const isFocus = focus.r === r && focus.d === d
                 return (
@@ -129,19 +136,19 @@ export function AttendanceGrid({ grid, edits, onChange }: Props) {
                     }}
                     tabIndex={isFocus ? 0 : -1}
                     aria-label={`${row.fullName}, ${day.date}: ${value === 'PRESENT' ? 'present' : value === 'ABSENT' ? 'absent' : toMark ? 'scheduled, not marked' : scheduled ? 'scheduled' : 'no class'}`}
-                    aria-disabled={day.future || undefined}
+                    aria-disabled={!editable || undefined}
                     data-testid={`cell-${row.studentCode}-${day.day}`}
                     data-value={cellLabel(value, scheduled)}
                     onClick={() => {
                       setFocus({ r, d })
-                      if (!day.future) setCell(r, d, nextStatus(value))
+                      if (editable) setCell(r, d, nextStatus(value))
                     }}
                     onFocus={() => setFocus({ r, d })}
                     onKeyDown={(e) => onKeyDown(e, r, d)}
                     className={cn(
                       'h-8 w-9 min-w-9 select-none border-l border-t text-center text-xs font-bold outline-none focus:ring-2 focus:ring-inset focus:ring-primary',
                       day.weekend && 'bg-slate-100',
-                      day.future ? 'cursor-not-allowed bg-slate-50 text-muted-foreground/40' : 'cursor-pointer hover:bg-primary/10',
+                      editable ? 'cursor-pointer hover:bg-primary/10' : 'cursor-not-allowed bg-slate-50 text-muted-foreground/40',
                       scheduled && value === null && (toMark ? 'bg-amber-100 text-amber-800' : 'bg-sky-50 text-sky-700'),
                       value === 'PRESENT' && 'bg-green-100 text-green-800',
                       value === 'ABSENT' && 'bg-red-100 text-red-800',

@@ -18,6 +18,11 @@ export function isScheduled(grid: AttendanceGrid, rowIndex: number, dayIndex: nu
   return !!grid.rows[rowIndex].scheduled?.[dayIndex]
 }
 
+/** Past days and today are always editable; a future day only where the student has a class on the calendar. */
+export function isEditable(grid: AttendanceGrid, rowIndex: number, dayIndex: number): boolean {
+  return !grid.days[dayIndex].future || isScheduled(grid, rowIndex, dayIndex)
+}
+
 /** Scheduled classes on or before today that still have no P/A (the "to mark" count). */
 export function countToMark(grid: AttendanceGrid, edits: Map<string, CellValue>): number {
   let n = 0

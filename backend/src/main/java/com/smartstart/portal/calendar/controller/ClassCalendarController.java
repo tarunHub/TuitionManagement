@@ -1,5 +1,7 @@
 package com.smartstart.portal.calendar.controller;
 
+import com.smartstart.portal.calendar.dto.ClassCalendarDtos.ClearRequest;
+import com.smartstart.portal.calendar.dto.ClassCalendarDtos.ClearResult;
 import com.smartstart.portal.calendar.dto.ClassCalendarDtos.SendScheduleRequest;
 import com.smartstart.portal.calendar.dto.ClassCalendarDtos.ClassChangeRequest;
 import com.smartstart.portal.calendar.dto.ClassCalendarDtos.ReminderSettingsRequest;
@@ -69,6 +71,12 @@ public class ClassCalendarController {
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public void delete(@PathVariable Long id) {
         service.delete(id);
+    }
+
+    @Operation(summary = "Remove classes in bulk between two dates, for one batch or all (attendance is kept)")
+    @PostMapping("/clear")
+    public ClearResult clear(@Valid @RequestBody ClearRequest request) {
+        return service.clear(request);
     }
 
     @Operation(summary = "Add a class on the chosen weekdays of a month (days that already have one are skipped)")

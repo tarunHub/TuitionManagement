@@ -1,6 +1,6 @@
 import { http } from './client'
 import { compact } from '@/lib/utils'
-import type { BulkSendResult, ClassChangeInput, ClassSession, ClassSessionInput, MessagePreview, MessageToSend, NotificationChannel, ReminderSettings, RepeatWeeklyInput } from '@/types'
+import type { BulkSendResult, ClassChangeInput, ClassSession, ClassSessionInput, MessagePreview, MessageToSend, NotificationChannel, ReminderSettings, RepeatWeeklyInput, Weekday } from '@/types'
 
 export const classCalendarApi = {
   list: (month: string, groupId?: number | '') =>
@@ -8,6 +8,8 @@ export const classCalendarApi = {
   create: (input: ClassSessionInput) => http.post<ClassSession>('/class-calendar', input).then((r) => r.data),
   update: (id: number, input: ClassSessionInput) => http.put<ClassSession>(`/class-calendar/${id}`, input).then((r) => r.data),
   remove: (id: number) => http.delete<void>(`/class-calendar/${id}`),
+  clear: (input: { from: string; to: string; classGroupId?: number; weekdays?: Weekday[] }) =>
+    http.post<{ removed: number }>('/class-calendar/clear', input).then((r) => r.data),
   repeatWeekly: (input: RepeatWeeklyInput) =>
     http.post<{ created: number; skipped: number }>('/class-calendar/repeat-weekly', input).then((r) => r.data),
   reminderSettings: () => http.get<ReminderSettings>('/class-calendar/reminder-settings').then((r) => r.data),

@@ -5,7 +5,7 @@ import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { format } from 'date-fns'
-import { Bell, Loader2, Plus, Repeat, Send, Settings2, Trash2 } from 'lucide-react'
+import { Bell, Eraser, Loader2, Plus, Repeat, Send, Settings2, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { classCalendarApi } from '@/api/classCalendarApi'
 import { notificationsApi } from '@/api/notificationsApi'
@@ -272,6 +272,120 @@ function RepeatDialog({ open, onOpenChange, month, groupId }: { open: boolean; o
   )
 }
 
+/** Remove many classes at once: a date range in the month, all batches or one, optionally only some weekdays. */
+function ClearDialog({ open, onOpenChange, month, groupId }: {
+  open: boolean
+  onOpenChange: (o: boolean) => void
+  month: string
+  groupId: number | ''
+}) {
+  const groups = useClassGroups()
+  // Every batch's classes, so the count is right whichever batch is picked here.
+  const all = useQuery({ queryKey: ['class-calendar', month, ''], queryFn: () => classCalendarApi.list(month, ''), enabled: open })
+  const sessions = all.data ?? []
+  const invalidate = useInvalidate()
+  const first = `${month}-01`
+  const last = format(new Date(monthToDate(month).getFullYear(), monthToDate(month).getMonth() + 1, 0), 'yyyy-MM-dd')
+  const [form, setForm] = useState({ classGroupId: '' as number | '', from: first, to: last, weekdays: [] as Weekday[] })
+  const [confirming, setConfirming] = useState(false)
+  useEffect(() => {
+    if (open) {
+      setForm({ classGroupId: groupId, from: first, to: last, weekdays: [] })
+      setConfirming(false)
+    }
+  }, [open, groupId, first, last])
+
+  const set = <K extends keyof typeof form>(k: K, v: (typeof form)[K]) => {
+    setForm((f) => ({ ...f, [k]: v }))
+    setConfirming(false)
+  }
+  const dayOf = (iso: string) => WEEKDAYS[(new Date(`${iso}T00:00:00`).getDay() + 6) % 7].value
+  const matching = sessions.filter(
+    (s) => s.date >= form.from && s.date <= form.to &&
+      (form.classGroupId === '' || s.classGroupId === form.classGroupId) &&
+      (form.weekdays.length === 0 || form.weekdays.includes(dayOf(s.date))),
+  )
+  const valid = form.from >= first && form.to <= last && form.from <= form.to
+
+  const clear = useMutation({
+    mutationFn: () => classCalendarApi.clear({
+      from: form.from, to: form.to,
+      classGroupId: form.classGroupId === '' ? undefined : form.classGroupId,
+      weekdays: form.weekdays.length ? form.weekdays : undefined,
+    }),
+    onSuccess: (r) => {
+      toast.success(`Removed ${r.removed} class${r.removed === 1 ? '' : 'es'} from the calendar`)
+      invalidate()
+      onOpenChange(false)
+    },
+    onError: (e) => toast.error(errorMessage(e)),
+  })
+
+  const n = matching.length
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-lg" data-testid="clear-dialog">
+        <DialogHeader>
+          <DialogTitle>Clear classes in {formatMonth(month)}</DialogTitle>
+          <DialogDescription>Removes classes from the calendar in one go. Attendance already marked is kept, and parents are not notified.</DialogDescription>
+        </DialogHeader>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <FormField id="clear-group" label="Batch" className="sm:col-span-2">
+            <NativeSelect id="clear-group" value={form.classGroupId} onChange={(e) => set('classGroupId', e.target.value ? Number(e.target.value) : '')} data-testid="clear-group">
+              <option value="">All batches</option>
+              {groups.data?.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
+            </NativeSelect>
+          </FormField>
+          <FormField id="clear-from" label="From">
+            <Input id="clear-from" type="date" min={first} max={last} value={form.from} onChange={(e) => set('from', e.target.value)} data-testid="clear-from" />
+          </FormField>
+          <FormField id="clear-to" label="To">
+            <Input id="clear-to" type="date" min={first} max={last} value={form.to} onChange={(e) => set('to', e.target.value)} data-testid="clear-to" />
+          </FormField>
+          <fieldset className="space-y-1.5 sm:col-span-2">
+            <legend className="text-sm font-medium">Only on <span className="font-normal text-muted-foreground">(leave all unticked for every day)</span></legend>
+            <div className="flex flex-wrap gap-2">
+              {WEEKDAYS.map((d) => (
+                <label key={d.value} className="flex cursor-pointer items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-sm has-[:checked]:border-primary has-[:checked]:bg-primary/10">
+                  <input
+                    type="checkbox"
+                    checked={form.weekdays.includes(d.value)}
+                    onChange={(e) => set('weekdays', e.target.checked ? [...form.weekdays, d.value] : form.weekdays.filter((w) => w !== d.value))}
+                    data-testid={`clear-day-${d.short.toLowerCase()}`}
+                  />
+                  {d.short}
+                </label>
+              ))}
+            </div>
+          </fieldset>
+          <p className={cn('text-sm sm:col-span-2', confirming ? 'font-medium text-destructive' : 'text-muted-foreground')} role="status" data-testid="clear-count">
+            {all.isLoading
+              ? 'Counting classes…'
+              : !valid
+              ? `Pick dates within ${formatMonth(month)}, with "From" on or before "To".`
+              : n === 0
+                ? 'No classes match.'
+                : confirming
+                  ? `Remove ${n} class${n === 1 ? '' : 'es'}? This can't be undone.`
+                  : `${n} class${n === 1 ? '' : 'es'} will be removed.`}
+          </p>
+        </div>
+        <DialogFooter>
+          <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
+          <Button
+            variant="destructive"
+            disabled={!valid || n === 0 || clear.isPending}
+            onClick={() => (confirming ? clear.mutate() : setConfirming(true))}
+            data-testid="clear-confirm"
+          >
+            {clear.isPending ? <Loader2 className="animate-spin" /> : <Trash2 />} {confirming ? 'Yes, remove' : `Remove ${n || ''} class${n === 1 ? '' : 'es'}`}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
 const DAYS_BEFORE = [
   { value: 0, label: 'On the day of the class' },
   { value: 1, label: 'The day before' },
@@ -433,6 +547,7 @@ export function ClassCalendarPage() {
 
   const [editing, setEditing] = useState<{ session: ClassSession | null; date: string } | null>(null)
   const [repeatOpen, setRepeatOpen] = useState(false)
+  const [clearOpen, setClearOpen] = useState(false)
   const [emailOpen, setEmailOpen] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [review, setReview] = useState<ReviewRequest | null>(null)
@@ -505,6 +620,7 @@ export function ClassCalendarPage() {
               <>
                 <Button variant="outline" onClick={() => setRepeatOpen(true)} data-testid="calendar-repeat"><Repeat /> Repeat weekly</Button>
                 <Button variant="outline" onClick={() => setEditing({ session: null, date: `${month}-01` })} data-testid="calendar-add"><Plus /> Add class</Button>
+                <Button variant="outline" onClick={() => setClearOpen(true)} disabled={!q.data?.length} data-testid="calendar-clear"><Eraser /> Clear classes</Button>
               </>
             )}
             <Button variant="outline" onClick={() => setSettingsOpen(true)} data-testid="calendar-reminder-settings"><Settings2 /> Reminder settings</Button>
@@ -586,6 +702,7 @@ export function ClassCalendarPage() {
       <SessionDialog open={!!editing} onOpenChange={(o) => !o && setEditing(null)} session={editing?.session ?? null} defaults={defaults} onChanged={offerNotice} onReview={setReview} />
       <ReminderSettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} current={reminders.data} />
       <ReviewMessagesDialog request={review} onClose={() => setReview(null)} />
+      <ClearDialog open={clearOpen} onOpenChange={setClearOpen} month={month} groupId={groupId} />
       <RepeatDialog open={repeatOpen} onOpenChange={setRepeatOpen} month={month} groupId={groupId} />
       <SendScheduleDialog open={emailOpen} onOpenChange={setEmailOpen} month={month} batches={perBatch} onReview={setReview} />
     </div>
