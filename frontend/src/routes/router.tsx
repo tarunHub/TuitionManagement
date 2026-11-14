@@ -18,7 +18,11 @@ import { StudentDetailPage } from '@/features/students/StudentDetailPage'
 import { StudentFormPage } from '@/features/students/StudentFormPage'
 import { StudentsListPage } from '@/features/students/StudentsListPage'
 import { AuthProvider } from '@/hooks/useAuth'
-import { ProtectedRoute } from './ProtectedRoute'
+import { CentreDetailPage } from '@/features/platform/CentreDetailPage'
+import { CentresPage } from '@/features/platform/CentresPage'
+import { PlatformAdminsPage } from '@/features/platform/PlatformAdminsPage'
+import { CentreSettingsPage } from '@/features/settings/CentreSettingsPage'
+import { CentreRoute, HomeRedirect, PlatformRoute, ProtectedRoute } from './ProtectedRoute'
 
 function NotFoundPage() {
   return (
@@ -26,7 +30,7 @@ function NotFoundPage() {
       <p className="text-5xl font-bold text-muted-foreground">404</p>
       <p className="text-lg">Page not found</p>
       <Button asChild>
-        <Link to="/dashboard">Back to dashboard</Link>
+        <Link to="/">Back to home</Link>
       </Button>
     </div>
   )
@@ -52,7 +56,18 @@ export const router = createBrowserRouter([
           </ProtectedRoute>
         ),
         children: [
-          { path: '/', element: <Navigate to="/dashboard" replace /> },
+          { path: '/', element: <HomeRedirect /> },
+          {
+            element: <PlatformRoute />,
+            children: [
+              { path: '/platform/centres', element: <CentresPage /> },
+              { path: '/platform/centres/:id', element: <CentreDetailPage /> },
+              { path: '/platform/admins', element: <PlatformAdminsPage /> },
+            ],
+          },
+          {
+            element: <CentreRoute />,
+            children: [
           { path: '/dashboard', element: <DashboardPage /> },
           { path: '/students', element: <StudentsListPage /> },
           { path: '/students/new', element: <StudentFormPage /> },
@@ -71,6 +86,9 @@ export const router = createBrowserRouter([
           { path: '/notifications/compose', element: <ComposeNotificationPage /> },
           { path: '/notifications/:id/edit', element: <ComposeNotificationPage /> },
           { path: '/notifications/templates', element: <TemplatesPage /> },
+          { path: '/settings', element: <CentreSettingsPage /> },
+            ],
+          },
           { path: '*', element: <NotFoundPage /> },
         ],
       },

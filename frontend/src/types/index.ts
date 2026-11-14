@@ -19,11 +19,95 @@ export interface Page<T> {
 }
 
 // ---- Auth
+export type UserRole = 'PLATFORM_ADMIN' | 'STAFF'
+
 export interface AdminUser {
   id: number
   username: string
   fullName: string | null
-  role: string
+  role: UserRole
+  /** Set for STAFF; null for platform admins. */
+  centreId: number | null
+  centreName: string | null
+}
+
+// ---- Platform (centres and logins)
+export interface Centre {
+  id: number
+  name: string
+  studentCodePrefix: string
+  contactEmail: string | null
+  contactPhone: string | null
+  address: string | null
+  active: boolean
+  userCount: number
+  studentCount: number
+  emailConfigured: boolean
+  smsConfigured: boolean
+  createdAt: string
+}
+
+export interface CentreInput {
+  name: string
+  studentCodePrefix: string
+  contactEmail?: string | null
+  contactPhone?: string | null
+  address?: string | null
+  active?: boolean
+}
+
+export interface UserInput {
+  username: string
+  fullName?: string | null
+  password: string
+}
+
+export interface PortalUserRow {
+  id: number
+  username: string
+  fullName: string | null
+  role: UserRole
+  enabled: boolean
+  centreId: number | null
+  createdAt: string
+}
+
+export interface MessagingSettings {
+  centreName: string
+  studentCodePrefix: string
+  mailFrom: string | null
+  mailFromName: string | null
+  smtpHost: string | null
+  smtpPort: number | null
+  smtpUsername: string | null
+  smtpPasswordSet: boolean
+  smtpAuth: boolean
+  smtpStarttls: boolean
+  emailConfigured: boolean
+  smsEnabled: boolean
+  smsGatewayUrl: string | null
+  smsUsername: string | null
+  smsPasswordSet: boolean
+  smsCountryCode: string
+  smsConfigured: boolean
+}
+
+export interface MessagingSettingsInput {
+  mailFrom: string | null
+  mailFromName: string | null
+  smtpHost: string | null
+  smtpPort: number | null
+  smtpUsername: string | null
+  smtpPassword: string | null
+  clearSmtpPassword: boolean
+  smtpAuth: boolean
+  smtpStarttls: boolean
+  smsEnabled: boolean
+  smsGatewayUrl: string | null
+  smsUsername: string | null
+  smsPassword: string | null
+  clearSmsPassword: boolean
+  smsCountryCode: string
 }
 
 export interface LoginResponse {

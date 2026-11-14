@@ -20,6 +20,37 @@ export const tokenStore = {
   },
 }
 
+const CENTRE_KEY = 'ss.centre'
+
+export interface SelectedCentre {
+  id: number
+  name: string
+}
+
+/** The centre a platform admin has switched into (staff always work in their own centre). Tab-scoped like the token. */
+let centre: SelectedCentre | null = (() => {
+  try {
+    return JSON.parse(sessionStorage.getItem(CENTRE_KEY) ?? 'null') as SelectedCentre | null
+  } catch {
+    return null
+  }
+})()
+const centreListeners = new Set<() => void>()
+
+export const centreStore = {
+  get: () => centre,
+  set(value: SelectedCentre | null) {
+    centre = value
+    if (value) sessionStorage.setItem(CENTRE_KEY, JSON.stringify(value))
+    else sessionStorage.removeItem(CENTRE_KEY)
+    centreListeners.forEach((l) => l())
+  },
+  subscribe(listener: () => void) {
+    centreListeners.add(listener)
+    return () => centreListeners.delete(listener)
+  },
+}
+
 export const http = axios.create({
   baseURL: import.meta.env.VITE_API_BASE_URL ?? '/api/v1',
   headers: { 'Content-Type': 'application/json' },
@@ -28,6 +59,8 @@ export const http = axios.create({
 http.interceptors.request.use((config) => {
   const t = tokenStore.get()
   if (t) config.headers.Authorization = `Bearer ${t}`
+  const c = centreStore.get()
+  if (c) config.headers['X-Centre-Id'] = String(c.id)
   return config
 })
 

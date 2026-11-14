@@ -26,7 +26,7 @@ export function LoginPage() {
   const [error, setError] = useState<string | null>(null)
   const { register, handleSubmit, formState } = useForm<Values>({ resolver: zodResolver(schema) })
 
-  const from = (location.state as { from?: string } | null)?.from ?? '/dashboard'
+  const from = (location.state as { from?: string } | null)?.from ?? '/'
   if (token) return <Navigate to={from} replace />
 
   const onSubmit = handleSubmit(async (v) => {
@@ -43,7 +43,7 @@ export function LoginPage() {
     <div className="flex min-h-screen items-center justify-center bg-slate-100 p-4">
       <Card className="w-full max-w-sm">
         <CardHeader className="p-6 pb-2">
-          <CardTitle className="text-xl">Smart Start</CardTitle>
+          <CardTitle className="text-xl">Tuition Portal</CardTitle>
           <CardDescription>Sign in to the student portal</CardDescription>
         </CardHeader>
         <CardContent className="p-6 pt-2">

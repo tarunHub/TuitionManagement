@@ -6,12 +6,14 @@ import { feedbackApi } from '@/api/feedbackApi'
 import { studentsApi } from '@/api/studentsApi'
 import { EmptyState, ErrorState, TableSkeleton } from '@/components/States'
 import { Button } from '@/components/ui/button'
+import { useAuth } from '@/hooks/useAuth'
 import { currentMonth, formatMonth, isMonthParam } from '@/lib/dates'
 import { formatPercent } from '@/lib/money'
 
 /** Printable per-student monthly report (use the browser's "Save as PDF"). */
 export function FeedbackReportPage() {
   const studentId = Number(useParams().studentId)
+  const { centre } = useAuth()
   const [params] = useSearchParams()
   const raw = params.get('month')
   const month = isMonthParam(raw) ? raw : currentMonth()
@@ -39,7 +41,7 @@ export function FeedbackReportPage() {
       ) : (
         <article className="rounded-lg border bg-white p-8 shadow-sm print:border-0 print:shadow-none" data-testid="feedback-report">
           <header className="mb-6 border-b pb-4">
-            <p className="text-sm font-semibold uppercase tracking-wide text-primary">Smart Start Tutoring</p>
+            <p className="text-sm font-semibold uppercase tracking-wide text-primary">{centre?.name}</p>
             <h1 className="mt-1 text-2xl font-bold">Monthly Progress Report</h1>
             <p className="text-muted-foreground">{formatMonth(month)}</p>
           </header>
