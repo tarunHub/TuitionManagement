@@ -13,8 +13,8 @@ export function ProtectedRoute({ children }: { children: ReactNode }) {
 
 /** Centre pages need a centre: a platform admin who hasn't switched into one goes to the centre list. */
 export function CentreRoute() {
-  const { user, centre } = useAuth()
-  if (!user) return null
+  const { user, centre, centreReady } = useAuth()
+  if (!user || !centreReady) return null
   if (!centre) return <Navigate to="/platform/centres" replace />
   return <Outlet />
 }
@@ -29,7 +29,7 @@ export function PlatformRoute() {
 
 /** "/" goes to the dashboard inside a centre, or to the centre list for a platform admin. */
 export function HomeRedirect() {
-  const { user, centre } = useAuth()
-  if (!user) return null
+  const { user, centre, centreReady } = useAuth()
+  if (!user || !centreReady) return null
   return <Navigate to={centre ? '/dashboard' : '/platform/centres'} replace />
 }
