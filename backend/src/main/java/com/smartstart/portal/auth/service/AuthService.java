@@ -9,7 +9,6 @@ import com.smartstart.portal.auth.repository.AdminUserRepository;
 import com.smartstart.portal.common.exception.BadRequestException;
 import com.smartstart.portal.common.exception.NotFoundException;
 import com.smartstart.portal.common.exception.TooManyRequestsException;
-import com.smartstart.portal.security.AdminUserDetailsService;
 import com.smartstart.portal.security.JwtService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -39,14 +38,17 @@ public class AuthService {
                     "Too many failed login attempts. Try again in " + minutes + " minute(s).");
         });
 
-        AdminUser user = repository.findByUsernameIgnoreCase(username).orElse(null);
+        AdminUser user = repository.findWithCentre(username).orElse(null);
         if (user == null || !user.isEnabled() || !passwordEncoder.matches(request.password(), user.getPasswordHash())) {
             loginAttempts.recordFailure(username);
             log.info("Failed login attempt");
             throw new BadCredentialsException(INVALID);
         }
+        if (!user.isPlatformAdmin() && (user.getCentre() == null || !user.getCentre().isActive())) {
+            throw new BadRequestException("CENTRE_INACTIVE", "Your centre's account is not active. Please contact the platform administrator.");
+        }
         loginAttempts.recordSuccess(username);
-        JwtService.IssuedToken token = jwtService.issue(user.getUsername(), AdminUserDetailsService.ROLE_ADMIN);
+        JwtService.IssuedToken token = jwtService.issue(user.getUsername(), user.getRole().name());
         return new LoginResponse(token.token(), token.expiresAt(), toResponse(user));
     }
 
@@ -68,10 +70,12 @@ public class AuthService {
     }
 
     private AdminUser find(String username) {
-        return repository.findByUsernameIgnoreCase(username).orElseThrow(() -> new NotFoundException("User", username));
+        return repository.findWithCentre(username).orElseThrow(() -> new NotFoundException("User", username));
     }
 
-    private static AdminUserResponse toResponse(AdminUser user) {
-        return new AdminUserResponse(user.getId(), user.getUsername(), user.getFullName(), AdminUserDetailsService.ROLE_ADMIN);
+    public static AdminUserResponse toResponse(AdminUser user) {
+        return new AdminUserResponse(user.getId(), user.getUsername(), user.getFullName(), user.getRole().name(),
+                user.getCentre() == null ? null : user.getCentre().getId(),
+                user.getCentre() == null ? null : user.getCentre().getName());
     }
 }

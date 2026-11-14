@@ -4,6 +4,7 @@ import com.smartstart.portal.classgroup.entity.ClassGroup;
 import jakarta.persistence.Column;
 import jakarta.persistence.Embeddable;
 import jakarta.persistence.EmbeddedId;
+import org.hibernate.annotations.TenantId;
 import jakarta.persistence.Entity;
 import jakarta.persistence.FetchType;
 import jakarta.persistence.JoinColumn;
@@ -26,6 +27,10 @@ public class StudentBatchHistory {
 
     @EmbeddedId
     private Key id;
+
+    @TenantId
+    @Column(name = "centre_id", nullable = false, updatable = false)
+    private Long centreId;
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "class_group_id")

@@ -13,6 +13,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.Clock;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.LocalTime;
 import java.util.EnumSet;
 import java.util.Optional;
 import java.util.Set;
@@ -26,7 +27,7 @@ public class ReminderSettingsService {
     private final SmsGatewayNotificationSender sms;
     private final Clock clock;
 
-    @Transactional(readOnly = true)
+    @Transactional
     public ReminderSettingsResponse get() {
         return toResponse(load());
     }
@@ -73,8 +74,18 @@ public class ReminderSettingsService {
         return out;
     }
 
+    /** The current centre's settings; a new centre starts with on, 8:00 AM on the day, email + SMS. */
     private ReminderSettings load() {
-        return repository.findById(ReminderSettings.ID).orElseThrow(() -> new IllegalStateException("reminder_settings row missing"));
+        return repository.findAll().stream().findFirst().orElseGet(() -> {
+            ReminderSettings s = new ReminderSettings();
+            s.setEnabled(true);
+            s.setDaysBefore((short) 0);
+            s.setSendTime(LocalTime.of(8, 0));
+            s.setSendEmail(true);
+            s.setSendSms(true);
+            s.setUpdatedAt(clock.instant());
+            return repository.saveAndFlush(s);
+        });
     }
 
     private ReminderSettingsResponse toResponse(ReminderSettings s) {

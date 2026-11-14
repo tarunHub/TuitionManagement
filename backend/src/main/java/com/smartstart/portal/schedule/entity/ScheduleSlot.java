@@ -1,7 +1,7 @@
 package com.smartstart.portal.schedule.entity;
 
 import com.smartstart.portal.classgroup.entity.ClassGroup;
-import com.smartstart.portal.common.entity.BaseEntity;
+import com.smartstart.portal.centre.tenancy.TenantEntity;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
@@ -19,7 +19,7 @@ import java.time.LocalTime;
 @Setter
 @Entity
 @Table(name = "schedule_slot")
-public class ScheduleSlot extends BaseEntity {
+public class ScheduleSlot extends TenantEntity {
 
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "term_id", nullable = false)

@@ -19,7 +19,8 @@ public final class AuthDtos {
     public record LoginResponse(String token, Instant expiresAt, AdminUserResponse user) {
     }
 
-    public record AdminUserResponse(Long id, String username, String fullName, String role) {
+    /** {@code centreId}/{@code centreName} are set for STAFF and null for PLATFORM_ADMIN. */
+    public record AdminUserResponse(Long id, String username, String fullName, String role, Long centreId, String centreName) {
     }
 
     public record ChangePasswordRequest(

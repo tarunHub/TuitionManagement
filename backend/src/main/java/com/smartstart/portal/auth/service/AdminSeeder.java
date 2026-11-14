@@ -1,6 +1,7 @@
 package com.smartstart.portal.auth.service;
 
 import com.smartstart.portal.auth.entity.AdminUser;
+import com.smartstart.portal.auth.entity.UserRole;
 import com.smartstart.portal.auth.repository.AdminUserRepository;
 import com.smartstart.portal.config.AppProperties;
 import lombok.RequiredArgsConstructor;
@@ -11,7 +12,7 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
-/** Creates the initial admin from ADMIN_USERNAME / ADMIN_PASSWORD when no such user exists yet. */
+/** Creates the initial platform admin from ADMIN_USERNAME / ADMIN_PASSWORD when no such user exists yet. */
 @Slf4j
 @Component
 @RequiredArgsConstructor
@@ -39,6 +40,7 @@ public class AdminSeeder implements ApplicationRunner {
         user.setPasswordHash(passwordEncoder.encode(admin.password()));
         user.setFullName(isBlank(admin.fullName()) ? "Administrator" : admin.fullName());
         user.setEnabled(true);
+        user.setRole(UserRole.PLATFORM_ADMIN);
         repository.save(user);
         log.info("Seeded initial admin user");
     }

@@ -210,7 +210,7 @@ public class NotificationService {
 
     public ChannelStatusResponse channels() {
         return new ChannelStatusResponse(true, sms.isConfigured(), sms.isConfigured() ? null
-                : "SMS is off. Set SMS_ENABLED=true and SMS_GATEWAY_URL (the Android SMS Gateway app) in .env.");
+                : "SMS is off for this centre. Turn it on in Centre settings → SMS.");
     }
 
     // ---------------------------------------------------------------- Preview
@@ -343,7 +343,7 @@ public class NotificationService {
     public MessagePreview monthlyScheduleDrafts(YearMonth month, List<Long> groupIds, Set<NotificationChannel> channels) {
         Set<NotificationChannel> wanted = channels == null || channels.isEmpty() ? EnumSet.of(NotificationChannel.EMAIL) : channels;
         if (wanted.contains(NotificationChannel.SMS) && !sms.isConfigured()) {
-            throw new BadRequestException("SMS_NOT_CONFIGURED", "SMS is not set up (see SMS settings in .env)", "channels");
+            throw new BadRequestException("SMS_NOT_CONFIGURED", "SMS is not set up for this centre (see Centre settings)", "channels");
         }
         Map<ClassGroup, List<ClassSession>> byGroup = new LinkedHashMap<>();
         classSessions.sessions(month, null).stream()
@@ -457,7 +457,7 @@ public class NotificationService {
     @Transactional
     public BulkSendResult sendReviewed(List<MessageToSend> messages) {
         if (messages.stream().anyMatch(m -> m.channel() == NotificationChannel.SMS) && !sms.isConfigured()) {
-            throw new BadRequestException("SMS_NOT_CONFIGURED", "SMS is not set up (see SMS settings in .env)", "messages");
+            throw new BadRequestException("SMS_NOT_CONFIGURED", "SMS is not set up for this centre (see Centre settings)", "messages");
         }
         Map<Long, Student> students = studentRepository.findAllById(messages.stream().map(MessageToSend::studentId).distinct().toList())
                 .stream().collect(Collectors.toMap(Student::getId, Function.identity()));

@@ -1,6 +1,6 @@
 package com.smartstart.portal.attendance.entity;
 
-import com.smartstart.portal.common.entity.BaseEntity;
+import com.smartstart.portal.centre.tenancy.TenantEntity;
 import com.smartstart.portal.student.entity.Student;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -20,7 +20,7 @@ import java.time.LocalDate;
 @Setter
 @Entity
 @Table(name = "attendance")
-public class Attendance extends BaseEntity {
+public class Attendance extends TenantEntity {
 
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "student_id", nullable = false)

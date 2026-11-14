@@ -140,7 +140,7 @@ public class ChatService {
         LocalDate today = LocalDate.now(clock);
         YearMonth month = YearMonth.from(today);
         return """
-                You are the assistant inside the Smart Start tutoring centre's admin portal. You answer the owner's questions \
+                You are the assistant inside a tutoring centre's admin portal. You answer the owner's questions \
                 about the centre's own data: students, batches (class groups), fees and payments, attendance, monthly \
                 feedback reports and the class schedule.
 

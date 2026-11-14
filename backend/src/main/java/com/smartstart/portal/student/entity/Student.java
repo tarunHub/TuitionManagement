@@ -1,7 +1,7 @@
 package com.smartstart.portal.student.entity;
 
 import com.smartstart.portal.classgroup.entity.ClassGroup;
-import com.smartstart.portal.common.entity.BaseEntity;
+import com.smartstart.portal.centre.tenancy.TenantEntity;
 import jakarta.persistence.CollectionTable;
 import jakarta.persistence.Column;
 import jakarta.persistence.ElementCollection;
@@ -26,7 +26,7 @@ import java.util.Set;
 @Setter
 @Entity
 @Table(name = "student")
-public class Student extends BaseEntity {
+public class Student extends TenantEntity {
 
     @Column(name = "student_code", nullable = false, unique = true, length = 10, updatable = false)
     private String studentCode;

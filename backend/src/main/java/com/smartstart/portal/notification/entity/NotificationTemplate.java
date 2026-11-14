@@ -1,6 +1,6 @@
 package com.smartstart.portal.notification.entity;
 
-import com.smartstart.portal.common.entity.BaseEntity;
+import com.smartstart.portal.centre.tenancy.TenantEntity;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
@@ -13,7 +13,7 @@ import lombok.Setter;
 @Setter
 @Entity
 @Table(name = "notification_template")
-public class NotificationTemplate extends BaseEntity {
+public class NotificationTemplate extends TenantEntity {
 
     @Column(nullable = false, unique = true, length = 100)
     private String name;

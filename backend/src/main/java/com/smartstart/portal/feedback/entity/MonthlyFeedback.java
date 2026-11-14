@@ -1,6 +1,6 @@
 package com.smartstart.portal.feedback.entity;
 
-import com.smartstart.portal.common.entity.BaseEntity;
+import com.smartstart.portal.centre.tenancy.TenantEntity;
 import com.smartstart.portal.student.entity.Student;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -17,7 +17,7 @@ import java.time.LocalDate;
 @Setter
 @Entity
 @Table(name = "monthly_feedback")
-public class MonthlyFeedback extends BaseEntity {
+public class MonthlyFeedback extends TenantEntity {
 
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "student_id", nullable = false)

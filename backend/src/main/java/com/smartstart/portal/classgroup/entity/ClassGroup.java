@@ -1,6 +1,6 @@
 package com.smartstart.portal.classgroup.entity;
 
-import com.smartstart.portal.common.entity.BaseEntity;
+import com.smartstart.portal.centre.tenancy.TenantEntity;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Table;
@@ -11,7 +11,7 @@ import lombok.Setter;
 @Setter
 @Entity
 @Table(name = "class_group")
-public class ClassGroup extends BaseEntity {
+public class ClassGroup extends TenantEntity {
 
     @Column(nullable = false, unique = true, length = 100)
     private String name;

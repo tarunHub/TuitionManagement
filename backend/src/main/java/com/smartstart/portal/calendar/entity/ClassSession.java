@@ -1,7 +1,7 @@
 package com.smartstart.portal.calendar.entity;
 
 import com.smartstart.portal.classgroup.entity.ClassGroup;
-import com.smartstart.portal.common.entity.BaseEntity;
+import com.smartstart.portal.centre.tenancy.TenantEntity;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.FetchType;
@@ -19,7 +19,7 @@ import java.time.LocalTime;
 @Setter
 @Entity
 @Table(name = "class_session")
-public class ClassSession extends BaseEntity {
+public class ClassSession extends TenantEntity {
 
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "class_group_id", nullable = false)

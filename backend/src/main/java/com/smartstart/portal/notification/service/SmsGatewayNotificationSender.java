@@ -1,5 +1,7 @@
 package com.smartstart.portal.notification.service;
 
+import com.smartstart.portal.centre.entity.Centre;
+import com.smartstart.portal.centre.service.CurrentCentre;
 import com.smartstart.portal.config.AppProperties;
 import com.smartstart.portal.notification.entity.Notification;
 import com.smartstart.portal.notification.entity.NotificationChannel;
@@ -23,25 +25,26 @@ import java.util.List;
 @Component
 public class SmsGatewayNotificationSender implements NotificationSender {
 
-    private final AppProperties.Sms props;
+    private final CurrentCentre currentCentre;
     private final RestClient client;
 
-    public SmsGatewayNotificationSender(AppProperties appProperties, RestClient.Builder builder) {
-        this.props = appProperties.sms();
-        Duration timeout = props.timeout() == null ? Duration.ofSeconds(15) : props.timeout();
+    public SmsGatewayNotificationSender(AppProperties appProperties, CurrentCentre currentCentre, RestClient.Builder builder) {
+        this.currentCentre = currentCentre;
+        Duration timeout = appProperties.sms() == null || appProperties.sms().timeout() == null
+                ? Duration.ofSeconds(15) : appProperties.sms().timeout();
         SimpleClientHttpRequestFactory factory = new SimpleClientHttpRequestFactory();
         factory.setConnectTimeout(timeout);
         factory.setReadTimeout(timeout);
         this.client = builder.requestFactory(factory).build();
     }
 
-    /** True when SMS is switched on and a gateway URL is set; the UI hides the SMS option otherwise. */
+    /** True when the current centre has SMS switched on and a gateway URL set; the UI hides the SMS option otherwise. */
     public boolean isConfigured() {
-        return props.enabled() && props.gatewayUrl() != null && !props.gatewayUrl().isBlank();
+        return currentCentre.get().smsConfigured();
     }
 
     public String defaultCountryCode() {
-        return props.defaultCountryCode();
+        return currentCentre.get().getSmsCountryCode();
     }
 
     @Override
@@ -51,8 +54,9 @@ public class SmsGatewayNotificationSender implements NotificationSender {
 
     @Override
     public void send(Notification notification) throws NotificationDeliveryException {
-        if (!isConfigured()) {
-            throw new NotificationDeliveryException("SMS is not configured (set SMS_ENABLED and SMS_GATEWAY_URL)", null);
+        Centre props = currentCentre.get();
+        if (!props.smsConfigured()) {
+            throw new NotificationDeliveryException("SMS is not set up for this centre (Centre settings → SMS)", null);
         }
         List<String> numbers = notification.recipientList();
         if (numbers.isEmpty()) {
@@ -64,11 +68,11 @@ public class SmsGatewayNotificationSender implements NotificationSender {
         }
         try {
             client.post()
-                    .uri(endpoint(props.gatewayUrl()))
+                    .uri(endpoint(props.getSmsGatewayUrl()))
                     .contentType(MediaType.APPLICATION_JSON)
                     .headers(h -> {
-                        if (props.username() != null && !props.username().isBlank()) {
-                            h.setBasicAuth(props.username(), props.password() == null ? "" : props.password());
+                        if (props.getSmsUsername() != null && !props.getSmsUsername().isBlank()) {
+                            h.setBasicAuth(props.getSmsUsername(), props.getSmsPassword() == null ? "" : props.getSmsPassword());
                         }
                     })
                     .header(HttpHeaders.ACCEPT, MediaType.APPLICATION_JSON_VALUE)

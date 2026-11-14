@@ -43,7 +43,8 @@ public class SecurityConfig {
                         .requestMatchers("/swagger-ui.html", "/swagger-ui/**", "/v3/api-docs/**").permitAll()
                         .requestMatchers("/actuator/health", "/actuator/health/**").permitAll()
                         .requestMatchers("/error").permitAll()
-                        .requestMatchers("/api/**").hasRole("ADMIN")
+                        .requestMatchers("/api/v1/platform/**").hasRole("PLATFORM_ADMIN")
+                        .requestMatchers("/api/**").hasAnyRole("PLATFORM_ADMIN", "STAFF")
                         .anyRequest().denyAll())
                 .addFilterBefore(jwtFilter, UsernamePasswordAuthenticationFilter.class);
         return http.build();
@@ -59,7 +60,7 @@ public class SecurityConfig {
         CorsConfiguration config = new CorsConfiguration();
         config.setAllowedOrigins(props.cors().allowedOrigins());
         config.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
-        config.setAllowedHeaders(List.of("Authorization", "Content-Type"));
+        config.setAllowedHeaders(List.of("Authorization", "Content-Type", "X-Centre-Id"));
         config.setExposedHeaders(List.of("Content-Disposition"));
         config.setMaxAge(Duration.ofHours(1));
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();

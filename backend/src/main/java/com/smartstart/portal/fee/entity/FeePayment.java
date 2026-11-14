@@ -1,6 +1,6 @@
 package com.smartstart.portal.fee.entity;
 
-import com.smartstart.portal.common.entity.BaseEntity;
+import com.smartstart.portal.centre.tenancy.TenantEntity;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
@@ -19,7 +19,7 @@ import java.time.LocalDate;
 @Setter
 @Entity
 @Table(name = "fee_payment")
-public class FeePayment extends BaseEntity {
+public class FeePayment extends TenantEntity {
 
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "monthly_fee_id", nullable = false)

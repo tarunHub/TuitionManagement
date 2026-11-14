@@ -32,7 +32,7 @@ import java.util.List;
 public class FeedbackWriter {
 
     private static final String SYSTEM_PROMPT = """
-            You write the monthly progress feedback that the Smart Start tutoring centre sends to parents.
+            You write the monthly progress feedback that the tutoring centre sends to parents.
             You get facts about one student and the tutor's rough notes, and you return three fields:
             - topicsTaught: what was covered this month, as a short comma-separated list or one sentence.
             - improvementAreas: what the student should work on, as 1-3 kind, specific, encouraging sentences.

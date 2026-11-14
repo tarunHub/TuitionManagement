@@ -19,8 +19,6 @@ import java.util.Map;
 
 public interface StudentRepository extends JpaRepository<Student, Long>, JpaSpecificationExecutor<Student> {
 
-    @Query(value = "SELECT nextval('student_code_seq')", nativeQuery = true)
-    long nextCodeValue();
 
     @Override
     @EntityGraph(attributePaths = "classGroup")

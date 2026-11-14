@@ -12,4 +12,9 @@ public final class CurrentUser {
         Authentication auth = SecurityContextHolder.getContext().getAuthentication();
         return auth == null ? null : auth.getName();
     }
+
+    public static PortalUser get() {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        return auth != null && auth.getPrincipal() instanceof PortalUser u ? u : null;
+    }
 }

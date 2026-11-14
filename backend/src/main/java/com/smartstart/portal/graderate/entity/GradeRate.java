@@ -1,6 +1,6 @@
 package com.smartstart.portal.graderate.entity;
 
-import com.smartstart.portal.common.entity.BaseEntity;
+import com.smartstart.portal.centre.tenancy.TenantEntity;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Table;
@@ -13,7 +13,7 @@ import java.math.BigDecimal;
 @Setter
 @Entity
 @Table(name = "grade_rate")
-public class GradeRate extends BaseEntity {
+public class GradeRate extends TenantEntity {
 
     @Column(nullable = false, unique = true, length = 30)
     private String grade;

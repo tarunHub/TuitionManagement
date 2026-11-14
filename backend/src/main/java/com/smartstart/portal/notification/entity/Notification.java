@@ -1,6 +1,6 @@
 package com.smartstart.portal.notification.entity;
 
-import com.smartstart.portal.common.entity.BaseEntity;
+import com.smartstart.portal.centre.tenancy.TenantEntity;
 import com.smartstart.portal.common.util.EmailListParser;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -20,7 +20,7 @@ import java.util.List;
 @Setter
 @Entity
 @Table(name = "notification")
-public class Notification extends BaseEntity {
+public class Notification extends TenantEntity {
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 20)

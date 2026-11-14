@@ -1,5 +1,7 @@
 package com.smartstart.portal.notification.service;
 
+import com.smartstart.portal.centre.service.CurrentCentre;
+import com.smartstart.portal.centre.tenancy.TenantContext;
 import com.smartstart.portal.notification.dto.NotificationDtos.PlaceholderInfo;
 import org.springframework.stereotype.Component;
 
@@ -13,6 +15,7 @@ import java.util.regex.Pattern;
 public class TemplateRenderer {
 
     public static final List<PlaceholderInfo> PLACEHOLDERS = List.of(
+            new PlaceholderInfo("centreName", "Your centre's name"),
             new PlaceholderInfo("guardianName", "Parent/guardian name"),
             new PlaceholderInfo("studentName", "Student full name"),
             new PlaceholderInfo("month", "Month, e.g. August 2026"),
@@ -29,9 +32,21 @@ public class TemplateRenderer {
 
     private static final Pattern TOKEN = Pattern.compile("\\{\\{\\s*(\\w+)\\s*}}");
 
+    private final CurrentCentre currentCentre;
+
+    public TemplateRenderer(CurrentCentre currentCentre) {
+        this.currentCentre = currentCentre;
+    }
+
+    /** Fills placeholders; {{centreName}} is always available and comes from the current centre. */
     public String render(String template, Map<String, String> values) {
         if (template == null) {
             return "";
+        }
+        if (template.contains("centreName") && !values.containsKey("centreName") && TenantContext.isSet()) {
+            Map<String, String> withCentre = new java.util.HashMap<>(values);
+            withCentre.put("centreName", currentCentre.name());
+            values = withCentre;
         }
         Matcher m = TOKEN.matcher(template);
         StringBuilder out = new StringBuilder();

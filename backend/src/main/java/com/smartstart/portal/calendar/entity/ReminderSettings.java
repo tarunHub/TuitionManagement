@@ -2,7 +2,10 @@ package com.smartstart.portal.calendar.entity;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.GeneratedValue;
+import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
+import org.hibernate.annotations.TenantId;
 import jakarta.persistence.Table;
 import lombok.Getter;
 import lombok.Setter;
@@ -11,17 +14,20 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalTime;
 
-/** The single row of automatic class reminder settings (id is always 1). */
+/** Automatic class reminder settings: one row per centre. */
 @Getter
 @Setter
 @Entity
 @Table(name = "reminder_settings")
 public class ReminderSettings {
 
-    public static final short ID = 1;
-
     @Id
-    private Short id;
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+
+    @TenantId
+    @Column(name = "centre_id", nullable = false, updatable = false)
+    private Long centreId;
 
     @Column(nullable = false)
     private boolean enabled;

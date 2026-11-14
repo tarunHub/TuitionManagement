@@ -1,6 +1,6 @@
 package com.smartstart.portal.schedule.entity;
 
-import com.smartstart.portal.common.entity.BaseEntity;
+import com.smartstart.portal.centre.tenancy.TenantEntity;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Table;
@@ -13,7 +13,7 @@ import java.time.LocalDate;
 @Setter
 @Entity
 @Table(name = "term")
-public class Term extends BaseEntity {
+public class Term extends TenantEntity {
 
     @Column(nullable = false, length = 100)
     private String name;

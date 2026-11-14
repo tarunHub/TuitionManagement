@@ -1,6 +1,9 @@
 package com.smartstart.portal.student.service;
 
 import com.smartstart.portal.attendance.repository.AttendanceRepository;
+import com.smartstart.portal.centre.entity.Centre;
+import com.smartstart.portal.centre.repository.CentreRepository;
+import com.smartstart.portal.centre.tenancy.TenantContext;
 import com.smartstart.portal.classgroup.service.ClassGroupService;
 import com.smartstart.portal.common.dto.PageResponse;
 import com.smartstart.portal.common.exception.BadRequestException;
@@ -56,6 +59,7 @@ public class StudentService {
             Map.entry("enrollmentDate", "enrollmentDate"),
             Map.entry("createdAt", "createdAt"));
 
+    private final CentreRepository centreRepository;
     private final StudentRepository repository;
     private final StudentMapper mapper;
     private final GradeRateService gradeRateService;
@@ -87,7 +91,7 @@ public class StudentService {
         student.setPerClassRate(Money.scale(request.perClassRate() != null ? request.perClassRate() : grade.getPerClassRate()));
         student.setStatus(request.status() == null ? StudentStatus.ACTIVE : request.status());
         // Rule 1: codes come from a forward-only sequence, so they are never reused.
-        student.setStudentCode(formatCode(repository.nextCodeValue()));
+        student.setStudentCode(nextCode());
         Student saved = repository.save(student);
         batchHistory.recordNew(saved);
         log.info("Created student {}", saved.getStudentCode());
@@ -171,8 +175,16 @@ public class StudentService {
                 || feedbackRepository.existsByStudentId(studentId);
     }
 
-    public static String formatCode(long sequenceValue) {
-        return String.format(Locale.ROOT, "SS%03d", sequenceValue);
+    public static String formatCode(String prefix, long number) {
+        return String.format(Locale.ROOT, "%s%03d", prefix, number);
+    }
+
+    /** The centre's prefix plus its next number; the centre row is locked so two new students never share a code. */
+    private String nextCode() {
+        Centre centre = centreRepository.lockById(TenantContext.require()).orElseThrow();
+        long number = centre.getNextStudentCode();
+        centre.setNextStudentCode(number + 1);
+        return formatCode(centre.getStudentCodePrefix(), number);
     }
 
     private void applyCommon(Student student, StudentFields request, GradeRate grade) {
